@@ -124,8 +124,6 @@ func TestLeafCommandsStubOutSuccessfully(t *testing.T) {
 	}{
 		{name: "clone", args: []string{"clone", "https://github.com/example/repo.git"}},
 		{name: "status", args: []string{"status"}},
-		{name: "config show", args: []string{"config", "show"}},
-		{name: "config set clone-root", args: []string{"config", "set", "clone-root", "/tmp/repos"}},
 	}
 
 	for _, test := range tests {
@@ -140,6 +138,104 @@ func TestLeafCommandsStubOutSuccessfully(t *testing.T) {
 				t.Fatalf("%s output = %q, want %q", strings.Join(test.args, " "), output, "not yet implemented\n")
 			}
 		})
+	}
+}
+
+func TestConfigShowPrintsDefaultCloneRootWithoutCreatingConfigFile(t *testing.T) {
+	binary := buildGCM(t)
+	configPath := filepath.Join(t.TempDir(), "gcm", "config.yaml")
+
+	cmd := exec.Command(binary, "config", "show")
+	cmd.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcm config show failed: %v\n%s", err, output)
+	}
+
+	if got := string(output); got != "clone_root: ~/src  # default\n" {
+		t.Fatalf("gcm config show output = %q, want %q", got, "clone_root: ~/src  # default\n")
+	}
+
+	if _, err := os.Stat(configPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("config file existence = %v, want %v", err, os.ErrNotExist)
+	}
+}
+
+func TestConfigShowPrintsConfiguredCloneRoot(t *testing.T) {
+	binary := buildGCM(t)
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "config.yaml")
+
+	if err := os.WriteFile(configPath, []byte("clone_root: /custom/path\n"), 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	cmd := exec.Command(binary, "config", "show")
+	cmd.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcm config show failed: %v\n%s", err, output)
+	}
+
+	if got := string(output); got != "clone_root: /custom/path\n" {
+		t.Fatalf("gcm config show output = %q, want %q", got, "clone_root: /custom/path\n")
+	}
+}
+
+func TestConfigSetCloneRootWritesConfigAndPrintsSavedPath(t *testing.T) {
+	binary := buildGCM(t)
+	configPath := filepath.Join(t.TempDir(), "nested", "gcm", "config.yaml")
+
+	cmd := exec.Command(binary, "config", "set", "clone-root", "/custom/path")
+	cmd.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcm config set clone-root failed: %v\n%s", err, output)
+	}
+
+	if got := string(output); got != "Config saved to "+configPath+"\n" {
+		t.Fatalf("gcm config set clone-root output = %q, want %q", got, "Config saved to "+configPath+"\n")
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+
+	if got := string(data); got != "clone_root: /custom/path\n" {
+		t.Fatalf("config file contents = %q, want %q", got, "clone_root: /custom/path\n")
+	}
+
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("stat config file: %v", err)
+	}
+
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("config file mode = %o, want %o", got, 0o600)
+	}
+}
+
+func TestConfigShowReflectsCloneRootWrittenByConfigSet(t *testing.T) {
+	binary := buildGCM(t)
+	configPath := filepath.Join(t.TempDir(), "custom", "config.yaml")
+	env := append(os.Environ(), "GCM_CONFIG="+configPath)
+
+	setCommand := exec.Command(binary, "config", "set", "clone-root", "/custom/path")
+	setCommand.Env = env
+	if output, err := setCommand.CombinedOutput(); err != nil {
+		t.Fatalf("gcm config set clone-root failed: %v\n%s", err, output)
+	}
+
+	showCommand := exec.Command(binary, "config", "show")
+	showCommand.Env = env
+	output, err := showCommand.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcm config show failed: %v\n%s", err, output)
+	}
+
+	if got := string(output); got != "clone_root: /custom/path\n" {
+		t.Fatalf("gcm config show output = %q, want %q", got, "clone_root: /custom/path\n")
 	}
 }
 
