@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"git-clone-manager/internal/derivedpath"
 	"git-clone-manager/internal/exitcodes"
+	"git-clone-manager/internal/repourl"
 )
 
 func TestHelpListsTopLevelCommands(t *testing.T) {
@@ -115,29 +117,170 @@ func TestConfigShowHelpRendersUsage(t *testing.T) {
 	}
 }
 
-func TestLeafCommandsStubOutSuccessfully(t *testing.T) {
+func TestCloneClonesRepositoryIntoDerivedPath(t *testing.T) {
 	binary := buildGCM(t)
+	cloneRoot := filepath.Join(t.TempDir(), "src")
+	configPath := writeConfigFile(t, "clone_root: "+cloneRoot+"\n")
+	remotePath := createBareRemote(t)
+	remoteURL := "file://localhost" + remotePath
 
-	tests := []struct {
-		name string
-		args []string
-	}{
-		{name: "clone", args: []string{"clone", "https://github.com/example/repo.git"}},
-		{name: "status", args: []string{"status"}},
+	parts, err := repourl.Parse(remoteURL)
+	if err != nil {
+		t.Fatalf("parse remote URL for expected path: %v", err)
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			cmd := exec.Command(binary, test.args...)
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				t.Fatalf("%s failed: %v\n%s", strings.Join(test.args, " "), err, output)
-			}
+	wantPath := derivedpath.Derive(cloneRoot, parts.Hostname, parts.PathPrefix, parts.RepositoryName)
 
-			if string(output) != "not yet implemented\n" {
-				t.Fatalf("%s output = %q, want %q", strings.Join(test.args, " "), output, "not yet implemented\n")
-			}
-		})
+	cmd := exec.Command(binary, "clone", remoteURL)
+	cmd.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcm clone failed: %v\n%s", err, output)
+	}
+
+	cloningLine := "Cloning to " + wantPath + "..."
+	if !strings.Contains(string(output), cloningLine) {
+		t.Fatalf("gcm clone output = %q, want it to mention %q", output, cloningLine)
+	}
+
+	if strings.Index(string(output), cloningLine) > strings.Index(string(output), "Done.") {
+		t.Fatalf("gcm clone output = %q, want derived path announcement before completion", output)
+	}
+
+	assertGitDirExists(t, wantPath)
+}
+
+func TestCloneWarnsAndCreatesMissingCloneRoot(t *testing.T) {
+	binary := buildGCM(t)
+	cloneRoot := filepath.Join(t.TempDir(), "missing", "src")
+	configPath := writeConfigFile(t, "clone_root: "+cloneRoot+"\n")
+	remoteURL := "file://localhost" + createBareRemote(t)
+
+	cmd := exec.Command(binary, "clone", remoteURL)
+	cmd.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcm clone failed: %v\n%s", err, output)
+	}
+
+	if !strings.Contains(string(output), "Clone root "+cloneRoot+" does not exist - creating it") {
+		t.Fatalf("gcm clone output = %q, want clone-root creation warning", output)
+	}
+
+	info, err := os.Stat(cloneRoot)
+	if err != nil {
+		t.Fatalf("stat clone root: %v", err)
+	}
+
+	if !info.IsDir() {
+		t.Fatalf("clone root exists but is not a directory")
+	}
+}
+
+func TestCloneReportsAlreadyClonedDestination(t *testing.T) {
+	binary := buildGCM(t)
+	cloneRoot := filepath.Join(t.TempDir(), "src")
+	configPath := writeConfigFile(t, "clone_root: "+cloneRoot+"\n")
+	remoteURL := "file://localhost" + createBareRemote(t)
+
+	firstClone := exec.Command(binary, "clone", remoteURL)
+	firstClone.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	if output, err := firstClone.CombinedOutput(); err != nil {
+		t.Fatalf("initial gcm clone failed: %v\n%s", err, output)
+	}
+
+	parts, err := repourl.Parse(remoteURL)
+	if err != nil {
+		t.Fatalf("parse remote URL for expected path: %v", err)
+	}
+
+	wantPath := derivedpath.Derive(cloneRoot, parts.Hostname, parts.PathPrefix, parts.RepositoryName)
+
+	secondClone := exec.Command(binary, "clone", remoteURL)
+	secondClone.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := secondClone.CombinedOutput()
+	if err != nil {
+		t.Fatalf("second gcm clone failed: %v\n%s", err, output)
+	}
+
+	if !strings.Contains(string(output), "Already cloned at "+wantPath) {
+		t.Fatalf("second gcm clone output = %q, want already-cloned message for %q", output, wantPath)
+	}
+}
+
+func TestCloneReturnsActionableErrorWhenDestinationIsNotAGitRepository(t *testing.T) {
+	binary := buildGCM(t)
+	cloneRoot := filepath.Join(t.TempDir(), "src")
+	configPath := writeConfigFile(t, "clone_root: "+cloneRoot+"\n")
+	remoteURL := "file://localhost" + createBareRemote(t)
+
+	parts, err := repourl.Parse(remoteURL)
+	if err != nil {
+		t.Fatalf("parse remote URL for expected path: %v", err)
+	}
+
+	destinationPath := derivedpath.Derive(cloneRoot, parts.Hostname, parts.PathPrefix, parts.RepositoryName)
+	if err := os.MkdirAll(destinationPath, 0o755); err != nil {
+		t.Fatalf("create destination directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(destinationPath, "README.md"), []byte("not a repo\n"), 0o600); err != nil {
+		t.Fatalf("write destination file: %v", err)
+	}
+
+	cmd := exec.Command(binary, "clone", remoteURL)
+	cmd.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("gcm clone unexpectedly succeeded:\n%s", output)
+	}
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected exit error, got %T: %v", err, err)
+	}
+
+	if exitErr.ExitCode() != exitcodes.General {
+		t.Fatalf("exit code = %d, want %d\n%s", exitErr.ExitCode(), exitcodes.General, output)
+	}
+
+	want := "cannot clone to " + destinationPath + ": destination exists but is not a git repository. Move or remove it first, then run gcm clone again"
+	if !strings.Contains(string(output), want) {
+		t.Fatalf("gcm clone output = %q, want actionable error %q", output, want)
+	}
+}
+
+func TestClonedRepositoryAppearsInStatusOutputImmediately(t *testing.T) {
+	binary := buildGCM(t)
+	cloneRoot := filepath.Join(t.TempDir(), "src")
+	configPath := writeConfigFile(t, "clone_root: "+cloneRoot+"\n")
+	remoteURL := "file://localhost" + createBareRemote(t)
+
+	cloneCommand := exec.Command(binary, "clone", remoteURL)
+	cloneCommand.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	if output, err := cloneCommand.CombinedOutput(); err != nil {
+		t.Fatalf("gcm clone failed: %v\n%s", err, output)
+	}
+
+	parts, err := repourl.Parse(remoteURL)
+	if err != nil {
+		t.Fatalf("parse remote URL for expected path: %v", err)
+	}
+
+	destinationPath := derivedpath.Derive(cloneRoot, parts.Hostname, parts.PathPrefix, parts.RepositoryName)
+	relativePath, err := filepath.Rel(cloneRoot, destinationPath)
+	if err != nil {
+		t.Fatalf("compute relative path: %v", err)
+	}
+
+	statusCommand := exec.Command(binary, "status")
+	statusCommand.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := statusCommand.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcm status failed: %v\n%s", err, output)
+	}
+
+	if !strings.Contains(string(output), relativePath) {
+		t.Fatalf("gcm status output = %q, want repository path %q", output, relativePath)
 	}
 }
 
@@ -258,6 +401,25 @@ func TestUsageErrorsExitWithCode2(t *testing.T) {
 	}
 }
 
+func TestCloneMissingURLArgumentExitsWithCode2(t *testing.T) {
+	binary := buildGCM(t)
+
+	cmd := exec.Command(binary, "clone")
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("gcm clone unexpectedly succeeded:\n%s", output)
+	}
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected exit error, got %T: %v", err, err)
+	}
+
+	if exitErr.ExitCode() != exitcodes.Usage {
+		t.Fatalf("exit code = %d, want %d\n%s", exitErr.ExitCode(), exitcodes.Usage, output)
+	}
+}
+
 func buildGCM(t *testing.T) string {
 	t.Helper()
 
@@ -272,4 +434,82 @@ func buildGCM(t *testing.T) string {
 	}
 
 	return binary
+}
+
+func createBareRemote(t *testing.T) string {
+	t.Helper()
+
+	remotePath := filepath.Join(t.TempDir(), "remote.git")
+	runGitInDir(t, "", "init", "--bare", "--initial-branch=main", remotePath)
+
+	worktreePath := filepath.Join(t.TempDir(), "seed")
+	runGitInDir(t, "", "clone", remotePath, worktreePath)
+	writeFile(t, filepath.Join(worktreePath, "README.md"), "hello\n")
+	runGit(t, worktreePath, "add", "README.md")
+	runGit(t, worktreePath, "commit", "-m", "initial commit")
+	runGit(t, worktreePath, "push", "origin", "main")
+	runGit(t, worktreePath, "remote", "set-head", "origin", "main")
+
+	return remotePath
+}
+
+func assertGitDirExists(t *testing.T, repoPath string) {
+	t.Helper()
+
+	info, err := os.Stat(filepath.Join(repoPath, ".git"))
+	if err != nil {
+		t.Fatalf("stat .git directory: %v", err)
+	}
+
+	if !info.IsDir() {
+		t.Fatalf(".git exists but is not a directory")
+	}
+}
+
+func writeConfigFile(t *testing.T, contents string) string {
+	t.Helper()
+
+	configPath := filepath.Join(t.TempDir(), "gcm", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("create config directory: %v", err)
+	}
+
+	if err := os.WriteFile(configPath, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	return configPath
+}
+
+func writeFile(t *testing.T, path, contents string) {
+	t.Helper()
+
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func runGit(t *testing.T, repoPath string, args ...string) string {
+	t.Helper()
+	return runGitInDir(t, repoPath, args...)
+}
+
+func runGitInDir(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=Codex Test",
+		"GIT_AUTHOR_EMAIL=codex@example.com",
+		"GIT_COMMITTER_NAME=Codex Test",
+		"GIT_COMMITTER_EMAIL=codex@example.com",
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, output)
+	}
+
+	return string(output)
 }
