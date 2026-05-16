@@ -16,16 +16,19 @@ type Fake struct {
 
 	cloneFunc         func(url, destPath string) error
 	fetchFunc         func(repoPath string) error
+	currentBranchFunc func(repoPath string) (string, error)
 	dirtyCountFunc    func(repoPath string) (int, error)
 	commitsBehindFunc func(repoPath string) (int, error)
 	defaultBranchFunc func(repoPath string) (string, error)
 
+	currentBranchValue string
 	dirtyCountValue    int
 	commitsBehindValue int
 	defaultBranchValue string
 
 	cloneCalls         []CloneCall
 	fetchCalls         []string
+	currentBranchCalls []string
 	dirtyCountCalls    []string
 	commitsBehindCalls []string
 	defaultBranchCalls []string
@@ -49,6 +52,13 @@ func (fakeRunner *Fake) StubFetch(fn func(repoPath string) error) {
 	defer fakeRunner.mu.Unlock()
 
 	fakeRunner.fetchFunc = fn
+}
+
+func (fakeRunner *Fake) StubCurrentBranch(fn func(repoPath string) (string, error)) {
+	fakeRunner.mu.Lock()
+	defer fakeRunner.mu.Unlock()
+
+	fakeRunner.currentBranchFunc = fn
 }
 
 func (fakeRunner *Fake) StubDirtyCount(fn func(repoPath string) (int, error)) {
@@ -77,6 +87,13 @@ func (fakeRunner *Fake) SetDirtyCount(value int) {
 	defer fakeRunner.mu.Unlock()
 
 	fakeRunner.dirtyCountValue = value
+}
+
+func (fakeRunner *Fake) SetCurrentBranch(branch string) {
+	fakeRunner.mu.Lock()
+	defer fakeRunner.mu.Unlock()
+
+	fakeRunner.currentBranchValue = branch
 }
 
 func (fakeRunner *Fake) SetCommitsBehind(value int) {
@@ -117,6 +134,20 @@ func (fakeRunner *Fake) Fetch(repoPath string) error {
 	}
 
 	return nil
+}
+
+func (fakeRunner *Fake) CurrentBranch(repoPath string) (string, error) {
+	fakeRunner.mu.Lock()
+	fakeRunner.currentBranchCalls = append(fakeRunner.currentBranchCalls, repoPath)
+	currentBranchFunc := fakeRunner.currentBranchFunc
+	currentBranchValue := fakeRunner.currentBranchValue
+	fakeRunner.mu.Unlock()
+
+	if currentBranchFunc != nil {
+		return currentBranchFunc(repoPath)
+	}
+
+	return currentBranchValue, nil
 }
 
 func (fakeRunner *Fake) DirtyCount(repoPath string) (int, error) {
@@ -180,6 +211,13 @@ func (fakeRunner *Fake) DirtyCountCalls() []string {
 	defer fakeRunner.mu.Unlock()
 
 	return append([]string(nil), fakeRunner.dirtyCountCalls...)
+}
+
+func (fakeRunner *Fake) CurrentBranchCalls() []string {
+	fakeRunner.mu.Lock()
+	defer fakeRunner.mu.Unlock()
+
+	return append([]string(nil), fakeRunner.currentBranchCalls...)
 }
 
 func (fakeRunner *Fake) CommitsBehindCalls() []string {

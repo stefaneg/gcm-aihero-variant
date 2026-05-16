@@ -10,17 +10,22 @@ import (
 
 func TestFakeReturnsStubbedValuesAndRecordsCalls(t *testing.T) {
 	fakeRunner := gitrunnertest.New()
+	fakeRunner.SetCurrentBranch("main")
 	fakeRunner.SetDirtyCount(3)
 	fakeRunner.SetCommitsBehind(2)
 	fakeRunner.SetDefaultBranch("main")
 
 	cloneErr := errors.New("clone failed")
 	fetchErr := errors.New("fetch failed")
+	currentBranchErr := errors.New("current branch failed")
 	fakeRunner.StubClone(func(url, destPath string) error {
 		return cloneErr
 	})
 	fakeRunner.StubFetch(func(repoPath string) error {
 		return fetchErr
+	})
+	fakeRunner.StubCurrentBranch(func(repoPath string) (string, error) {
+		return "", currentBranchErr
 	})
 
 	if err := fakeRunner.Clone("https://example.com/repo.git", "/tmp/repo"); !errors.Is(err, cloneErr) {
@@ -29,6 +34,10 @@ func TestFakeReturnsStubbedValuesAndRecordsCalls(t *testing.T) {
 
 	if err := fakeRunner.Fetch("/tmp/repo"); !errors.Is(err, fetchErr) {
 		t.Fatalf("Fetch error = %v, want %v", err, fetchErr)
+	}
+
+	if _, err := fakeRunner.CurrentBranch("/tmp/repo"); !errors.Is(err, currentBranchErr) {
+		t.Fatalf("CurrentBranch error = %v, want %v", err, currentBranchErr)
 	}
 
 	dirtyCount, err := fakeRunner.DirtyCount("/tmp/repo")
@@ -64,6 +73,10 @@ func TestFakeReturnsStubbedValuesAndRecordsCalls(t *testing.T) {
 
 	if got := fakeRunner.FetchCalls(); len(got) != 1 || got[0] != "/tmp/repo" {
 		t.Fatalf("FetchCalls = %#v, want one recorded fetch call", got)
+	}
+
+	if got := fakeRunner.CurrentBranchCalls(); len(got) != 1 || got[0] != "/tmp/repo" {
+		t.Fatalf("CurrentBranchCalls = %#v, want one recorded current-branch call", got)
 	}
 
 	if got := fakeRunner.DirtyCountCalls(); len(got) != 1 || got[0] != "/tmp/repo" {

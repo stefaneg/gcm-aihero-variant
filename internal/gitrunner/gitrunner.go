@@ -12,6 +12,7 @@ import (
 type Runner interface {
 	Clone(url, destPath string) error
 	Fetch(repoPath string) error
+	CurrentBranch(repoPath string) (string, error)
 	DirtyCount(repoPath string) (int, error)
 	CommitsBehind(repoPath string) (int, error)
 	DefaultBranch(repoPath string) (string, error)
@@ -70,6 +71,19 @@ func (errorWithContext *NoRemoteError) Unwrap() error {
 	return errorWithContext.Err
 }
 
+type OriginHEADNotSetError struct {
+	RepositoryPath string
+	Err            error
+}
+
+func (errorWithContext *OriginHEADNotSetError) Error() string {
+	return fmt.Sprintf("repository %q does not have refs/remotes/origin/HEAD set: %v", errorWithContext.RepositoryPath, errorWithContext.Err)
+}
+
+func (errorWithContext *OriginHEADNotSetError) Unwrap() error {
+	return errorWithContext.Err
+}
+
 type runner struct {
 	gitBinary string
 }
@@ -109,10 +123,23 @@ func (gitRunner *runner) DirtyCount(repoPath string) (int, error) {
 	return countNonEmptyLines(output), nil
 }
 
+func (gitRunner *runner) CurrentBranch(repoPath string) (string, error) {
+	output, err := gitRunner.run(repoPath, "branch", "--show-current")
+	if err != nil {
+		return "", gitRunner.classifyError("branch", repoPath, err)
+	}
+
+	return strings.TrimSpace(output), nil
+}
+
 func (gitRunner *runner) CommitsBehind(repoPath string) (int, error) {
 	defaultBranch, err := gitRunner.DefaultBranch(repoPath)
 	if err != nil {
-		return 0, err
+		var originHeadErr *OriginHEADNotSetError
+		if !errors.As(err, &originHeadErr) {
+			return 0, err
+		}
+		defaultBranch = "main"
 	}
 
 	output, err := gitRunner.run(
@@ -186,6 +213,8 @@ func (gitRunner *runner) classifyError(operation, repoPath string, err error) er
 				return &RepositoryNotFoundError{RepositoryPath: repoPath, Err: err}
 			case strings.Contains(stderr, "no such file or directory"):
 				return &RepositoryNotFoundError{RepositoryPath: repoPath, Err: err}
+			case operation == "symbolic-ref" && strings.Contains(stderr, "is not a symbolic ref"):
+				return &OriginHEADNotSetError{RepositoryPath: repoPath, Err: err}
 			case strings.Contains(stderr, "no remote repository specified"),
 				strings.Contains(stderr, "no configured push destination"),
 				strings.Contains(stderr, "does not appear to be a git repository"),

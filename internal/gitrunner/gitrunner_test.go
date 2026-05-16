@@ -62,6 +62,23 @@ func TestDirtyCountCountsTrackedAndUntrackedChanges(t *testing.T) {
 	}
 }
 
+func TestCurrentBranchReturnsCheckedOutBranchName(t *testing.T) {
+	remotePath := createBareRemote(t)
+	clonePath := cloneRemote(t, remotePath)
+	runner := gitrunner.New()
+
+	runGit(t, clonePath, "checkout", "-b", "feature/status")
+
+	currentBranch, err := runner.CurrentBranch(clonePath)
+	if err != nil {
+		t.Fatalf("CurrentBranch returned error: %v", err)
+	}
+
+	if currentBranch != "feature/status" {
+		t.Fatalf("CurrentBranch = %q, want %q", currentBranch, "feature/status")
+	}
+}
+
 func TestCommitsBehindCountsBehindRemoteDefaultBranch(t *testing.T) {
 	remotePath := createBareRemote(t)
 	clonePath := cloneRemote(t, remotePath)
@@ -72,6 +89,28 @@ func TestCommitsBehindCountsBehindRemoteDefaultBranch(t *testing.T) {
 	if err := runner.Fetch(clonePath); err != nil {
 		t.Fatalf("Fetch returned error: %v", err)
 	}
+
+	commitsBehind, err := runner.CommitsBehind(clonePath)
+	if err != nil {
+		t.Fatalf("CommitsBehind returned error: %v", err)
+	}
+
+	if commitsBehind != 1 {
+		t.Fatalf("CommitsBehind = %d, want %d", commitsBehind, 1)
+	}
+}
+
+func TestCommitsBehindFallsBackToMainWhenOriginHEADIsUnset(t *testing.T) {
+	remotePath := createBareRemote(t)
+	clonePath := cloneRemote(t, remotePath)
+	runner := gitrunner.New()
+
+	pushCommitToRemote(t, remotePath, "second commit")
+	if err := runner.Fetch(clonePath); err != nil {
+		t.Fatalf("Fetch returned error: %v", err)
+	}
+
+	runGit(t, clonePath, "remote", "set-head", "origin", "--delete")
 
 	commitsBehind, err := runner.CommitsBehind(clonePath)
 	if err != nil {
@@ -108,6 +147,11 @@ func TestDefaultBranchReturnsErrorWhenOriginHEADIsUnset(t *testing.T) {
 	_, err := runner.DefaultBranch(clonePath)
 	if err == nil {
 		t.Fatal("DefaultBranch unexpectedly succeeded")
+	}
+
+	var originHeadErr *gitrunner.OriginHEADNotSetError
+	if !errors.As(err, &originHeadErr) {
+		t.Fatalf("DefaultBranch error type = %T, want *gitrunner.OriginHEADNotSetError", err)
 	}
 }
 
