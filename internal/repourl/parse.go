@@ -3,6 +3,7 @@ package repourl
 import (
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 )
 
@@ -73,4 +74,12 @@ func parseParts(rawURL, hostname, rawPath string) (Parts, error) {
 	}
 
 	return parts, nil
+}
+
+func (p Parts) DerivedPath(cloneRoot string) string {
+	if p.PathPrefix == "" {
+		return filepath.Join(cloneRoot, p.Hostname, p.RepositoryName)
+	}
+
+	return filepath.Join(cloneRoot, p.Hostname, p.PathPrefix, p.RepositoryName)
 }

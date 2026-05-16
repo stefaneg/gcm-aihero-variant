@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"git-clone-manager/internal/configstore"
-	"git-clone-manager/internal/derivedpath"
 	"git-clone-manager/internal/gitrunner"
 	"git-clone-manager/internal/repourl"
 
@@ -43,7 +42,7 @@ func newCloneCommand() *cobra.Command {
 				return err
 			}
 
-			destinationPath := derivedpath.Derive(cloneRoot, parts.Hostname, parts.PathPrefix, parts.RepositoryName)
+			destinationPath := parts.DerivedPath(cloneRoot)
 			if _, err := fmt.Fprintln(command.OutOrStdout(), "Cloning to "+destinationPath+"..."); err != nil {
 				return err
 			}

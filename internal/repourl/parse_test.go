@@ -109,3 +109,41 @@ func TestParseMalformedURLReturnsParseError(t *testing.T) {
 		t.Fatalf("Parse error type = %T, want *repourl.ParseError", err)
 	}
 }
+
+func TestDerivedPath(t *testing.T) {
+	tests := []struct {
+		name        string
+		cloneRoot   string
+		parts       repourl.Parts
+		wantDerived string
+	}{
+		{
+			name:      "with path prefix",
+			cloneRoot: "~/src",
+			parts: repourl.Parts{
+				Hostname:       "github.com",
+				PathPrefix:     "nWave-ai",
+				RepositoryName: "nWave",
+			},
+			wantDerived: "~/src/github.com/nWave-ai/nWave",
+		},
+		{
+			name:      "without path prefix",
+			cloneRoot: "~/src",
+			parts: repourl.Parts{
+				Hostname:       "example.com",
+				RepositoryName: "repo",
+			},
+			wantDerived: "~/src/example.com/repo",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := test.parts.DerivedPath(test.cloneRoot)
+			if got != test.wantDerived {
+				t.Fatalf("DerivedPath() = %q, want %q", got, test.wantDerived)
+			}
+		})
+	}
+}

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"git-clone-manager/internal/derivedpath"
 	"git-clone-manager/internal/exitcodes"
 	"git-clone-manager/internal/repourl"
 )
@@ -131,7 +130,7 @@ func TestCloneClonesRepositoryIntoDerivedPath(t *testing.T) {
 		t.Fatalf("parse remote URL for expected path: %v", err)
 	}
 
-	wantPath := derivedpath.Derive(cloneRoot, parts.Hostname, parts.PathPrefix, parts.RepositoryName)
+	wantPath := parts.DerivedPath(cloneRoot)
 
 	cmd := exec.Command(binary, "clone", remoteURL)
 	cmd.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
@@ -196,7 +195,7 @@ func TestCloneReportsAlreadyClonedDestination(t *testing.T) {
 		t.Fatalf("parse remote URL for expected path: %v", err)
 	}
 
-	wantPath := derivedpath.Derive(cloneRoot, parts.Hostname, parts.PathPrefix, parts.RepositoryName)
+	wantPath := parts.DerivedPath(cloneRoot)
 
 	secondClone := exec.Command(binary, "clone", remoteURL)
 	secondClone.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
@@ -221,7 +220,7 @@ func TestCloneReturnsActionableErrorWhenDestinationIsNotAGitRepository(t *testin
 		t.Fatalf("parse remote URL for expected path: %v", err)
 	}
 
-	destinationPath := derivedpath.Derive(cloneRoot, parts.Hostname, parts.PathPrefix, parts.RepositoryName)
+	destinationPath := parts.DerivedPath(cloneRoot)
 	if err := os.MkdirAll(destinationPath, 0o755); err != nil {
 		t.Fatalf("create destination directory: %v", err)
 	}
@@ -268,7 +267,7 @@ func TestClonedRepositoryAppearsInStatusOutputImmediately(t *testing.T) {
 		t.Fatalf("parse remote URL for expected path: %v", err)
 	}
 
-	destinationPath := derivedpath.Derive(cloneRoot, parts.Hostname, parts.PathPrefix, parts.RepositoryName)
+	destinationPath := parts.DerivedPath(cloneRoot)
 	relativePath, err := filepath.Rel(cloneRoot, destinationPath)
 	if err != nil {
 		t.Fatalf("compute relative path: %v", err)
