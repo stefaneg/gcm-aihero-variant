@@ -1,12 +1,18 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
-	"path/filepath"
 
 	"git-clone-manager/internal/configstore"
+	"git-clone-manager/internal/exitcodes"
+	"git-clone-manager/internal/gitrunner"
 	"git-clone-manager/internal/repositorywalker"
+	"git-clone-manager/internal/statuscollector"
+	"git-clone-manager/internal/statusformatter"
+	"git-clone-manager/internal/workerpool"
 
 	"github.com/spf13/cobra"
 )
@@ -26,27 +32,65 @@ func newStatusCommand() *cobra.Command {
 				return err
 			}
 
-			if _, err := fmt.Fprintln(command.OutOrStdout(), "Repos under "+cloneRoot+":"); err != nil {
+			noFetch, err := command.Flags().GetBool("no-fetch")
+			if err != nil {
+				return err
+			}
+
+			nonDefaultOnly, err := command.Flags().GetBool("non-default")
+			if err != nil {
 				return err
 			}
 
 			repositories, err := repositorywalker.Walk(cloneRoot)
 			if err != nil {
 				if os.IsNotExist(err) {
-					return nil
+					repositories = nil
+				} else {
+					return err
 				}
+			}
+
+			collector := statuscollector.New(gitrunner.New())
+			collected := workerpool.Run(repositories, func(repositoryPath string) (statuscollector.Result, error) {
+				return collector.Collect(repositoryPath, noFetch)
+			})
+
+			results := make([]statuscollector.Result, 0, len(collected))
+			fetchFailed := false
+			for _, collectedResult := range collected {
+				if collectedResult.Err != nil {
+					return collectedResult.Err
+				}
+
+				result := collectedResult.Value
+				if nonDefaultOnly && result.CurrentBranch == result.DefaultBranch {
+					if result.ErrorState == statuscollector.ErrorStateFetchFailed {
+						fetchFailed = true
+					}
+					continue
+				}
+
+				results = append(results, result)
+				if result.ErrorState == statuscollector.ErrorStateFetchFailed {
+					fetchFailed = true
+				}
+			}
+
+			output, err := statusformatter.Format(cloneRoot, results, statusformatter.Options{
+				StdoutIsTTY: writerIsTTY(command.OutOrStdout()),
+				NoColor:     os.Getenv("NO_COLOR") != "",
+			})
+			if err != nil {
 				return err
 			}
 
-			for _, repositoryPath := range repositories {
-				relativePath, err := filepath.Rel(cloneRoot, repositoryPath)
-				if err != nil {
-					return fmt.Errorf("compute repository path relative to clone root: %w", err)
-				}
+			if _, err := fmt.Fprint(command.OutOrStdout(), output); err != nil {
+				return err
+			}
 
-				if _, err := fmt.Fprintln(command.OutOrStdout(), relativePath); err != nil {
-					return err
-				}
+			if fetchFailed {
+				return exitcodes.WithCode(exitcodes.General, errors.New("one or more repositories failed to fetch"))
 			}
 
 			return nil
@@ -58,4 +102,18 @@ func newStatusCommand() *cobra.Command {
 	command.Flags().Bool("non-default", false, "Show only repositories on non-default branches")
 
 	return command
+}
+
+func writerIsTTY(writer io.Writer) bool {
+	file, ok := writer.(*os.File)
+	if !ok {
+		return false
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+
+	return (info.Mode() & os.ModeCharDevice) != 0
 }

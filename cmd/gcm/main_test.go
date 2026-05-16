@@ -2,11 +2,13 @@ package main_test
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"git-clone-manager/internal/derivedpath"
 	"git-clone-manager/internal/exitcodes"
@@ -284,6 +286,222 @@ func TestClonedRepositoryAppearsInStatusOutputImmediately(t *testing.T) {
 	}
 }
 
+func TestStatusShowsFormattedTableForRepositoriesUnderCloneRoot(t *testing.T) {
+	binary := buildGCM(t)
+	cloneRoot := filepath.Join(t.TempDir(), "src")
+	configPath := writeConfigFile(t, "clone_root: "+cloneRoot+"\n")
+
+	currentRemote := createBareRemote(t)
+	currentRepoPath := filepath.Join(cloneRoot, "github.com", "acme", "current")
+	cloneRemoteTo(t, currentRemote, currentRepoPath)
+
+	behindRemote := createBareRemote(t)
+	behindRepoPath := filepath.Join(cloneRoot, "github.com", "acme", "behind")
+	cloneRemoteTo(t, behindRemote, behindRepoPath)
+	pushCommitToRemote(t, behindRemote, "second commit")
+
+	featureRemote := createBareRemote(t)
+	featureRepoPath := filepath.Join(cloneRoot, "github.com", "acme", "feature")
+	cloneRemoteTo(t, featureRemote, featureRepoPath)
+	runGit(t, featureRepoPath, "checkout", "-b", "feature/login")
+	writeFile(t, filepath.Join(featureRepoPath, "notes.txt"), "draft\n")
+	pushCommitToRemote(t, featureRemote, "second commit")
+
+	command := exec.Command(binary, "status")
+	command.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcm status failed: %v\n%s", err, output)
+	}
+
+	status := string(output)
+	if !strings.Contains(status, "Repos under "+cloneRoot+":\n") {
+		t.Fatalf("gcm status output = %q, want header for clone root %q", status, cloneRoot)
+	}
+
+	featureRow := "github.com/acme/feature  feature/login  behind=1  dirty=1  [behind] [!main]"
+	behindRow := "github.com/acme/behind   main           behind=1  dirty=0  [behind]"
+	currentRow := "github.com/acme/current  main           behind=0  dirty=0"
+	for _, want := range []string{
+		featureRow,
+		behindRow,
+		currentRow,
+		"3 repos — 1 current, 1 behind, 1 non-default-branch",
+		"Tips: gcm pull; gcm status --non-default",
+	} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("gcm status output = %q, want %q", status, want)
+		}
+	}
+
+	if strings.Index(status, featureRow) > strings.Index(status, behindRow) {
+		t.Fatalf("gcm status output = %q, want non-default row before behind row", status)
+	}
+
+	if strings.Index(status, behindRow) > strings.Index(status, currentRow) {
+		t.Fatalf("gcm status output = %q, want behind row before current row", status)
+	}
+}
+
+func TestStatusNonDefaultFiltersTable(t *testing.T) {
+	binary := buildGCM(t)
+	cloneRoot := filepath.Join(t.TempDir(), "src")
+	configPath := writeConfigFile(t, "clone_root: "+cloneRoot+"\n")
+
+	currentRemote := createBareRemote(t)
+	currentRepoPath := filepath.Join(cloneRoot, "github.com", "acme", "current")
+	cloneRemoteTo(t, currentRemote, currentRepoPath)
+
+	featureRemote := createBareRemote(t)
+	featureRepoPath := filepath.Join(cloneRoot, "github.com", "acme", "feature")
+	cloneRemoteTo(t, featureRemote, featureRepoPath)
+	runGit(t, featureRepoPath, "checkout", "-b", "feature/login")
+
+	command := exec.Command(binary, "status", "--non-default")
+	command.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcm status --non-default failed: %v\n%s", err, output)
+	}
+
+	status := string(output)
+	if !strings.Contains(status, "github.com/acme/feature  feature/login  behind=0  dirty=0  [!main]") {
+		t.Fatalf("gcm status --non-default output = %q, want non-default repository row", status)
+	}
+
+	if strings.Contains(status, "github.com/acme/current") {
+		t.Fatalf("gcm status --non-default output = %q, did not want default-branch repository row", status)
+	}
+
+	if !strings.Contains(status, "1 repos — 0 current, 0 behind, 1 non-default-branch") {
+		t.Fatalf("gcm status --non-default output = %q, want filtered summary counts", status)
+	}
+}
+
+func TestStatusNoFetchUsesLocalStateWhenRemoteIsUnreachable(t *testing.T) {
+	binary := buildGCM(t)
+	cloneRoot := filepath.Join(t.TempDir(), "src")
+	configPath := writeConfigFile(t, "clone_root: "+cloneRoot+"\n")
+
+	remotePath := createBareRemote(t)
+	repoPath := filepath.Join(cloneRoot, "github.com", "acme", "current")
+	cloneRemoteTo(t, remotePath, repoPath)
+	runGit(t, repoPath, "remote", "set-url", "origin", "ssh://127.0.0.1:1/example/repo.git")
+
+	command := exec.Command(binary, "status", "--no-fetch")
+	command.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcm status --no-fetch failed: %v\n%s", err, output)
+	}
+
+	status := string(output)
+	if strings.Contains(status, "[fetch-failed]") {
+		t.Fatalf("gcm status --no-fetch output = %q, did not want fetch-failed marker", status)
+	}
+
+	if !strings.Contains(status, "github.com/acme/current") || !strings.Contains(status, "behind=0  dirty=0") {
+		t.Fatalf("gcm status --no-fetch output = %q, want repository row from local state", status)
+	}
+}
+
+func TestStatusReturnsNonZeroAndShowsFetchFailedRepositories(t *testing.T) {
+	binary := buildGCM(t)
+	cloneRoot := filepath.Join(t.TempDir(), "src")
+	configPath := writeConfigFile(t, "clone_root: "+cloneRoot+"\n")
+
+	remotePath := createBareRemote(t)
+	repoPath := filepath.Join(cloneRoot, "github.com", "acme", "offline")
+	cloneRemoteTo(t, remotePath, repoPath)
+	runGit(t, repoPath, "remote", "set-url", "origin", "ssh://127.0.0.1:1/example/repo.git")
+
+	command := exec.Command(binary, "status")
+	command.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatalf("gcm status unexpectedly succeeded:\n%s", output)
+	}
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected exit error, got %T: %v", err, err)
+	}
+
+	if exitErr.ExitCode() != exitcodes.General {
+		t.Fatalf("exit code = %d, want %d\n%s", exitErr.ExitCode(), exitcodes.General, output)
+	}
+
+	status := string(output)
+	if !strings.Contains(status, "[fetch-failed]") {
+		t.Fatalf("gcm status output = %q, want fetch-failed marker", status)
+	}
+
+	if !strings.Contains(status, "one or more repositories failed to fetch") {
+		t.Fatalf("gcm status output = %q, want partial-failure message", status)
+	}
+}
+
+func TestStatusShowsNoRemoteRepositoriesWithoutFailing(t *testing.T) {
+	binary := buildGCM(t)
+	cloneRoot := filepath.Join(t.TempDir(), "src")
+	configPath := writeConfigFile(t, "clone_root: "+cloneRoot+"\n")
+
+	repoPath := filepath.Join(cloneRoot, "github.com", "acme", "local-only")
+	if err := os.MkdirAll(filepath.Dir(repoPath), 0o755); err != nil {
+		t.Fatalf("create repository parent directory: %v", err)
+	}
+	runGitInDir(t, "", "init", "--initial-branch=main", repoPath)
+	writeFile(t, filepath.Join(repoPath, "README.md"), "hello\n")
+	runGit(t, repoPath, "add", "README.md")
+	runGit(t, repoPath, "commit", "-m", "initial commit")
+
+	command := exec.Command(binary, "status")
+	command.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcm status failed: %v\n%s", err, output)
+	}
+
+	status := string(output)
+	if !strings.Contains(status, "[no-remote]") {
+		t.Fatalf("gcm status output = %q, want no-remote marker", status)
+	}
+
+	if !strings.Contains(status, "1 repos — 0 current, 0 behind, 0 non-default-branch") {
+		t.Fatalf("gcm status output = %q, want no-remote repository excluded from summary counts", status)
+	}
+}
+
+func TestStatusCompletesWithinTenSecondsForTwoHundredRepositories(t *testing.T) {
+	binary := buildGCM(t)
+	cloneRoot := filepath.Join(t.TempDir(), "src")
+	configPath := writeConfigFile(t, "clone_root: "+cloneRoot+"\n")
+	remotePath := createBareRemote(t)
+
+	for index := range 200 {
+		repoPath := filepath.Join(cloneRoot, "github.com", "acme", fmt.Sprintf("repo-%03d", index))
+		cloneRemoteTo(t, remotePath, repoPath)
+	}
+
+	command := exec.Command(binary, "status")
+	command.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+
+	start := time.Now()
+	output, err := command.CombinedOutput()
+	duration := time.Since(start)
+	if err != nil {
+		t.Fatalf("gcm status failed: %v\n%s", err, output)
+	}
+
+	if duration > 10*time.Second {
+		t.Fatalf("gcm status duration = %v, want <= %v", duration, 10*time.Second)
+	}
+
+	if !strings.Contains(string(output), "200 repos —") {
+		t.Fatalf("gcm status output = %q, want 200-repository summary", output)
+	}
+}
+
 func TestConfigShowPrintsDefaultCloneRootWithoutCreatingConfigFile(t *testing.T) {
 	binary := buildGCM(t)
 	configPath := filepath.Join(t.TempDir(), "gcm", "config.yaml")
@@ -451,6 +669,27 @@ func createBareRemote(t *testing.T) string {
 	runGit(t, worktreePath, "remote", "set-head", "origin", "main")
 
 	return remotePath
+}
+
+func cloneRemoteTo(t *testing.T, remotePath, destinationPath string) {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Dir(destinationPath), 0o755); err != nil {
+		t.Fatalf("create clone parent directory: %v", err)
+	}
+
+	runGitInDir(t, "", "clone", remotePath, destinationPath)
+}
+
+func pushCommitToRemote(t *testing.T, remotePath, message string) {
+	t.Helper()
+
+	worktreePath := filepath.Join(t.TempDir(), "worktree")
+	runGitInDir(t, "", "clone", remotePath, worktreePath)
+	writeFile(t, filepath.Join(worktreePath, "README.md"), message+"\n")
+	runGit(t, worktreePath, "add", "README.md")
+	runGit(t, worktreePath, "commit", "-m", message)
+	runGit(t, worktreePath, "push", "origin", "main")
 }
 
 func assertGitDirExists(t *testing.T, repoPath string) {
