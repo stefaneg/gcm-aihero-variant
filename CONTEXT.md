@@ -38,7 +38,7 @@ _Avoid_: Stale, outdated, out of date
 
 **Discover**:
 The operation of enumerating all repositories in a remote org or group via the hosting platform API, then cloning those not already present under the clone root. Post-v1.
-_Avoid_: Bulk clone, sync, fetch
+_Avoid_: Bulk clone, sync
 
 **Hosting Platform**:
 A hostname-keyed configuration entry that records the platform type (`github`, `gitlab`, `generic`), optional protocol override, and optional API token for one hostname. Optional and post-v1.
@@ -68,3 +68,4 @@ _Avoid_: Host, host profile, remote
 
 - `--non-main` was used throughout early drafts — resolved: renamed to `--non-default` to match the **Default Branch** term and correctly handle repositories where the default branch is not `main`.
 - "org path", "namespace", "group", "owner" were used interchangeably for URL path segments between hostname and repository name — resolved: **Path Prefix**. Platform-specific terms are confined to hosting platform modules.
+- "fetch" was used both for the git network operation and as a loose synonym for post-v1 **Discover** — resolved: `fetch` remains valid only for the git operation; **Discover** avoids it as a synonym.
