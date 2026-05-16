@@ -9,10 +9,9 @@ import (
 	"git-clone-manager/internal/configstore"
 	"git-clone-manager/internal/exitcodes"
 	"git-clone-manager/internal/gitrunner"
-	"git-clone-manager/internal/repositorywalker"
 	"git-clone-manager/internal/statuscollector"
 	"git-clone-manager/internal/statusformatter"
-	"git-clone-manager/internal/workerpool"
+	"git-clone-manager/internal/statuspipeline"
 
 	"github.com/spf13/cobra"
 )
@@ -42,35 +41,21 @@ func newStatusCommand() *cobra.Command {
 				return err
 			}
 
-			repositories, err := repositorywalker.Walk(cloneRoot)
+			pipeline := statuspipeline.New(gitrunner.New())
+			collected, err := pipeline.Collect(cloneRoot, noFetch)
 			if err != nil {
-				if os.IsNotExist(err) {
-					repositories = nil
-				} else {
-					return err
-				}
+				return err
 			}
-
-			collector := statuscollector.New(gitrunner.New())
-			collected := workerpool.Run(repositories, func(repositoryPath string) (statuscollector.Result, error) {
-				return collector.Collect(repositoryPath, noFetch)
-			})
 
 			results := make([]statuscollector.Result, 0, len(collected))
 			fetchFailed := false
-			for _, collectedResult := range collected {
-				if collectedResult.Err != nil {
-					return collectedResult.Err
-				}
-
-				result := collectedResult.Value
+			for _, result := range collected {
 				if nonDefaultOnly && result.CurrentBranch == result.DefaultBranch {
 					if result.ErrorState == statuscollector.ErrorStateFetchFailed {
 						fetchFailed = true
 					}
 					continue
 				}
-
 				results = append(results, result)
 				if result.ErrorState == statuscollector.ErrorStateFetchFailed {
 					fetchFailed = true
