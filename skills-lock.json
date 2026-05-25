@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "package-design": {
+      "source": "/Users/gulli/src/github.com/stefaneg/llm-harness",
+      "sourceType": "local",
+      "computedHash": "c71db50d0b32df6b80e5e643f2222e5ad10ff46f25e5ba003d2cfc13e3253659"
+    }
+  }
+}
