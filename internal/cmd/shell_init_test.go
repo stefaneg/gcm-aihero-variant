@@ -17,17 +17,17 @@ func TestShellInitPrintsWrapperForRequestedShell(t *testing.T) {
 		{
 			name: "bash",
 			arg:  "bash",
-			want: []string{"gcm() {", `if [ "$1" = "clone" ]; then`, `command gcm "$@"`, `cd "$dest"`},
+			want: []string{"gcm() {", `if [ "$1" = "clone" ]; then`, `if [ "$1" = "open" ]; then`, `command gcm "$@"`, `cd "$dest"`},
 		},
 		{
 			name: "zsh",
 			arg:  "zsh",
-			want: []string{"gcm() {", `if [ "$1" = "clone" ]; then`, `command gcm "$@"`, `cd "$dest"`},
+			want: []string{"gcm() {", `if [ "$1" = "clone" ]; then`, `if [ "$1" = "open" ]; then`, `command gcm "$@"`, `cd "$dest"`},
 		},
 		{
 			name: "fish",
 			arg:  "fish",
-			want: []string{"function gcm", `test "$argv[1]" = "clone"`, "command gcm $argv", `cd "$dest"`},
+			want: []string{"function gcm", `test "$argv[1]" = "clone"`, `test "$argv[1]" = "open"`, "command gcm $argv", `cd "$dest"`},
 		},
 	}
 

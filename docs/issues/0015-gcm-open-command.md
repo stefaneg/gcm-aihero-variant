@@ -1,6 +1,6 @@
 # 0015 — `gcm open`: interactive repository selection with cd-only wrapper
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

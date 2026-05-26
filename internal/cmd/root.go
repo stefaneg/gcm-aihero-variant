@@ -19,6 +19,7 @@ func NewRootCommand() *cobra.Command {
 	})
 
 	root.AddCommand(newCloneCommand())
+	root.AddCommand(newOpenCommand())
 	root.AddCommand(newStatusCommand())
 	root.AddCommand(newConfigCommand())
 	root.AddCommand(newShellInitCommand())

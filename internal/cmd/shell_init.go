@@ -82,6 +82,13 @@ func shellWrapper(shell string) string {
             cd "$dest"
         end
         return $command_status
+    else if test (count $argv) -gt 0; and test "$argv[1]" = "open"
+        set -l dest (command gcm $argv)
+        set -l command_status $status
+        if test $command_status -eq 0; and test -n "$dest"
+            cd "$dest"
+        end
+        return $command_status
     else
         command gcm $argv
     end
@@ -90,6 +97,14 @@ end
 	default:
 		return `gcm() {
   if [ "$1" = "clone" ]; then
+    local dest
+    dest=$(command gcm "$@")
+    local command_status=$?
+    if [ $command_status -eq 0 ] && [ -n "$dest" ]; then
+      cd "$dest"
+    fi
+    return $command_status
+  elif [ "$1" = "open" ]; then
     local dest
     dest=$(command gcm "$@")
     local command_status=$?
