@@ -9,6 +9,8 @@ import (
 )
 
 func TestShellInitPrintsWrapperForRequestedShell(t *testing.T) {
+	t.Setenv("GCM_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+
 	tests := []struct {
 		name string
 		arg  string
@@ -56,6 +58,7 @@ func TestShellInitPrintsWrapperForRequestedShell(t *testing.T) {
 
 func TestShellInitDetectsShellFromEnvironment(t *testing.T) {
 	t.Setenv("SHELL", "/bin/zsh")
+	t.Setenv("GCM_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -75,6 +78,79 @@ func TestShellInitDetectsShellFromEnvironment(t *testing.T) {
 
 	if !strings.Contains(stdout.String(), "local command_status=$?") {
 		t.Fatalf("stdout = %q, want explicit command status capture", stdout.String())
+	}
+}
+
+func TestShellInitBakesProjectOpenerIntoPosixWrapper(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	t.Setenv("GCM_CONFIG", configPath)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	if exitCode := Execute([]string{"config", "set", "project-opener", "code --new-window"}, &stdout, &stderr); exitCode != 0 {
+		t.Fatalf("config set exit code = %d\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+
+	exitCode := Execute([]string{"shell-init", "zsh"}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("shell-init exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
+	}
+
+	if !strings.Contains(stdout.String(), `cd "$dest" && code --new-window .`) {
+		t.Fatalf("stdout = %q, want baked project opener", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "gcm config") || strings.Contains(stdout.String(), "GCM_OPENER") || strings.Contains(stdout.String(), "EDITOR") || strings.Contains(stdout.String(), "VISUAL") {
+		t.Fatalf("stdout = %q, wrapper must not resolve opener at runtime", stdout.String())
+	}
+}
+
+func TestShellInitBakesProjectOpenerIntoFishWrapper(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	t.Setenv("GCM_CONFIG", configPath)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	if exitCode := Execute([]string{"config", "set", "project-opener", "goland"}, &stdout, &stderr); exitCode != 0 {
+		t.Fatalf("config set exit code = %d\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+
+	exitCode := Execute([]string{"shell-init", "fish"}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("shell-init exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
+	}
+
+	if !strings.Contains(stdout.String(), `cd "$dest"; and goland .`) {
+		t.Fatalf("stdout = %q, want baked fish project opener", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "gcm config") || strings.Contains(stdout.String(), "GCM_OPENER") || strings.Contains(stdout.String(), "EDITOR") || strings.Contains(stdout.String(), "VISUAL") {
+		t.Fatalf("stdout = %q, wrapper must not resolve opener at runtime", stdout.String())
+	}
+}
+
+func TestShellInitWithoutProjectOpenerKeepsOpenBranchCdOnly(t *testing.T) {
+	t.Setenv("GCM_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Execute([]string{"shell-init", "zsh"}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("shell-init exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
+	}
+
+	if !strings.Contains(stdout.String(), `cd "$dest"`) {
+		t.Fatalf("stdout = %q, want cd-only open branch", stdout.String())
+	}
+	if strings.Contains(stdout.String(), `cd "$dest" &&`) {
+		t.Fatalf("stdout = %q, did not expect opener launch", stdout.String())
 	}
 }
 

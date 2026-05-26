@@ -7,15 +7,20 @@ import (
 	"path/filepath"
 	"strings"
 
+	"git-clone-manager/internal/configstore"
 	"git-clone-manager/internal/exitcodes"
 
 	"github.com/spf13/cobra"
 )
 
+var loadEffectiveShellConfig = func() (configstore.EffectiveConfig, error) {
+	return configstore.New().Effective()
+}
+
 func newShellInitCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "shell-init [bash|zsh|fish]",
-		Short: "Print shell integration for changing directory after clone",
+		Short: "Print shell integration for changing directory after clone or open",
 		RunE: func(command *cobra.Command, args []string) error {
 			install, err := command.Flags().GetBool("install")
 			if err != nil {
@@ -31,7 +36,12 @@ func newShellInitCommand() *cobra.Command {
 				return installShellInit(shell, command.ErrOrStderr())
 			}
 
-			if _, err := fmt.Fprint(command.OutOrStdout(), shellWrapper(shell)); err != nil {
+			effectiveConfig, err := loadEffectiveShellConfig()
+			if err != nil {
+				return err
+			}
+
+			if _, err := fmt.Fprint(command.OutOrStdout(), shellWrapper(shell, effectiveConfig.ProjectOpener)); err != nil {
 				return err
 			}
 
@@ -71,9 +81,13 @@ func validateShell(shell string) (string, error) {
 	}
 }
 
-func shellWrapper(shell string) string {
+func shellWrapper(shell string, projectOpener string) string {
 	switch shell {
 	case "fish":
+		openAction := `cd "$dest"`
+		if projectOpener != "" {
+			openAction = `cd "$dest"; and ` + projectOpener + ` .`
+		}
 		return `function gcm
     if test (count $argv) -gt 0; and test "$argv[1]" = "clone"
         set -l dest (command gcm $argv)
@@ -86,7 +100,7 @@ func shellWrapper(shell string) string {
         set -l dest (command gcm $argv)
         set -l command_status $status
         if test $command_status -eq 0; and test -n "$dest"
-            cd "$dest"
+            ` + openAction + `
         end
         return $command_status
     else
@@ -95,6 +109,10 @@ func shellWrapper(shell string) string {
 end
 `
 	default:
+		openAction := `cd "$dest"`
+		if projectOpener != "" {
+			openAction = `cd "$dest" && ` + projectOpener + ` .`
+		}
 		return `gcm() {
   if [ "$1" = "clone" ]; then
     local dest
@@ -109,7 +127,7 @@ end
     dest=$(command gcm "$@")
     local command_status=$?
     if [ $command_status -eq 0 ] && [ -n "$dest" ]; then
-      cd "$dest"
+      ` + openAction + `
     fi
     return $command_status
   else

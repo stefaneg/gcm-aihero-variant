@@ -16,12 +16,15 @@ const (
 )
 
 type Config struct {
-	CloneRoot string
+	CloneRoot     string
+	ProjectOpener string
 }
 
 type EffectiveConfig struct {
-	CloneRoot          string
-	CloneRootIsDefault bool
+	CloneRoot              string
+	CloneRootIsDefault     bool
+	ProjectOpener          string
+	ProjectOpenerIsDefault bool
 }
 
 type Store struct {
@@ -60,17 +63,19 @@ func (store *Store) Effective() (EffectiveConfig, error) {
 		return EffectiveConfig{}, err
 	}
 
-	if fileConfig.CloneRoot == "" {
-		return EffectiveConfig{
-			CloneRoot:          defaultCloneRoot,
-			CloneRootIsDefault: true,
-		}, nil
+	effectiveConfig := EffectiveConfig{
+		CloneRoot:              fileConfig.CloneRoot,
+		CloneRootIsDefault:     false,
+		ProjectOpener:          fileConfig.ProjectOpener,
+		ProjectOpenerIsDefault: fileConfig.ProjectOpener == "",
 	}
 
-	return EffectiveConfig{
-		CloneRoot:          fileConfig.CloneRoot,
-		CloneRootIsDefault: false,
-	}, nil
+	if effectiveConfig.CloneRoot == "" {
+		effectiveConfig.CloneRoot = defaultCloneRoot
+		effectiveConfig.CloneRootIsDefault = true
+	}
+
+	return effectiveConfig, nil
 }
 
 func (store *Store) SetCloneRoot(cloneRoot string) (string, error) {
@@ -83,7 +88,40 @@ func (store *Store) SetCloneRoot(cloneRoot string) (string, error) {
 		return "", fmt.Errorf("create config directory for %q: %w", configPath, err)
 	}
 
-	if err := os.WriteFile(configPath, []byte(format(Config{CloneRoot: cloneRoot})), 0o600); err != nil {
+	config, err := store.read(configPath)
+	if err != nil {
+		return "", err
+	}
+	config.CloneRoot = cloneRoot
+
+	if err := os.WriteFile(configPath, []byte(format(config)), 0o600); err != nil {
+		return "", fmt.Errorf("write config file %q: %w", configPath, err)
+	}
+
+	if err := os.Chmod(configPath, 0o600); err != nil {
+		return "", fmt.Errorf("set config file permissions for %q: %w", configPath, err)
+	}
+
+	return configPath, nil
+}
+
+func (store *Store) SetProjectOpener(projectOpener string) (string, error) {
+	configPath, err := store.Path()
+	if err != nil {
+		return "", err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		return "", fmt.Errorf("create config directory for %q: %w", configPath, err)
+	}
+
+	config, err := store.read(configPath)
+	if err != nil {
+		return "", err
+	}
+	config.ProjectOpener = projectOpener
+
+	if err := os.WriteFile(configPath, []byte(format(config)), 0o600); err != nil {
 		return "", fmt.Errorf("write config file %q: %w", configPath, err)
 	}
 
@@ -132,6 +170,12 @@ func parse(data []byte) (Config, error) {
 				return Config{}, fmt.Errorf("line %d: %w", lineNumber+1, err)
 			}
 			config.CloneRoot = parsedValue
+		case "project_opener":
+			parsedValue, err := parseScalar(value)
+			if err != nil {
+				return Config{}, fmt.Errorf("line %d: %w", lineNumber+1, err)
+			}
+			config.ProjectOpener = parsedValue
 		}
 	}
 
@@ -156,7 +200,8 @@ func parseScalar(value string) (string, error) {
 }
 
 func format(config Config) string {
-	return "clone_root: " + formatScalar(config.CloneRoot) + "\n"
+	return "clone_root: " + formatScalar(config.CloneRoot) + "\n" +
+		"project_opener: " + formatScalar(config.ProjectOpener) + "\n"
 }
 
 func formatScalar(value string) string {

@@ -27,6 +27,7 @@ func newConfigSetCommand() *cobra.Command {
 	}
 
 	command.AddCommand(newConfigSetCloneRootCommand())
+	command.AddCommand(newConfigSetProjectOpenerCommand())
 
 	return command
 }
@@ -49,6 +50,28 @@ func newConfigSetCloneRootCommand() *cobra.Command {
 	return command
 }
 
+func newConfigSetProjectOpenerCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "project-opener <command>",
+		Short: "Set the project opener command",
+		RunE: func(command *cobra.Command, args []string) error {
+			configPath, err := configstore.New().SetProjectOpener(args[0])
+			if err != nil {
+				return err
+			}
+
+			if _, err := fmt.Fprintln(command.OutOrStdout(), "Config saved to "+configPath); err != nil {
+				return err
+			}
+
+			_, err = fmt.Fprintln(command.ErrOrStderr(), `Project opener changes take effect after re-running: eval "$(gcm shell-init)"`)
+			return err
+		},
+	}
+	command.Args = usageArgs(cobra.ExactArgs(1))
+	return command
+}
+
 func newConfigShowCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "show",
@@ -61,6 +84,19 @@ func newConfigShowCommand() *cobra.Command {
 
 			line := "clone_root: " + effectiveConfig.CloneRoot
 			if effectiveConfig.CloneRootIsDefault {
+				line += "  # default"
+			}
+
+			if _, err := fmt.Fprintln(command.OutOrStdout(), line); err != nil {
+				return err
+			}
+
+			projectOpener := effectiveConfig.ProjectOpener
+			if projectOpener == "" {
+				projectOpener = `""`
+			}
+			line = "project_opener: " + projectOpener
+			if effectiveConfig.ProjectOpenerIsDefault {
 				line += "  # default"
 			}
 

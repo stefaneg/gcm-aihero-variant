@@ -1,6 +1,6 @@
 # 0016 — `project-opener` config + opener launch baked into shell-init wrapper
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 
