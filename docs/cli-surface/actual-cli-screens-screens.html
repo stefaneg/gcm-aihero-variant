@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>CLI Surface Screens — Actual CLI Screens and Errors</title>
+    <style>
+        :root {
+            --page-bg:      #fafafa;
+            --page-fg:      #1a1a1a;
+            --page-muted:   #57606a;
+            --rule:         #d0d7de;
+            --code-bg:      #f0f1f3;
+            --terminal-bg:  #0d1117;
+            --terminal-fg:  #e6edf3;
+            --fg-red:       #ff7b72;
+            --fg-green:     #7ee787;
+            --fg-yellow:    #e3b341;
+            --fg-blue:      #79c0ff;
+            --fg-cyan:      #56d4dd;
+            --fg-magenta:   #d2a8ff;
+            --dim:          #7d8590;
+            --stream-out:   #7d8590;
+            --stream-err:   #d29922;
+            --exit-ok:      #1a7f37;
+            --exit-fail:    #cf222e;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 980px;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+            color: var(--page-fg);
+            background: var(--page-bg);
+            line-height: 1.5;
+        }
+        h1 { font-size: 1.5rem; margin: 0 0 0.4rem; }
+        h2 { font-size: 1.2rem; margin: 1.5rem 0 0.6rem; }
+        .meta { color: var(--page-muted); font-size: 0.9rem; margin: 0 0 1.6rem; }
+        code {
+            background: var(--code-bg);
+            padding: 0.05rem 0.3rem;
+            border-radius: 3px;
+            font-family: "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+            font-size: 0.9em;
+        }
+        .legend {
+            border: 1px solid var(--rule);
+            border-radius: 6px;
+            padding: 0.8rem 1rem;
+            margin-bottom: 2rem;
+            background: #fff;
+        }
+        .legend h2 { font-size: 1rem; margin: 0 0 0.6rem; }
+        .legend dl {
+            margin: 0;
+            display: grid;
+            grid-template-columns: max-content 1fr;
+            column-gap: 1.2rem;
+            row-gap: 0.5rem;
+            font-size: 0.9rem;
+            align-items: baseline;
+        }
+        .legend dt {
+            font-family: "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+            white-space: nowrap;
+        }
+        .legend dd { margin: 0; }
+        .variant { margin-bottom: 2rem; }
+        .variant-note {
+            color: var(--page-muted);
+            font-size: 0.9rem;
+            margin: 0.2rem 0 0.6rem;
+            font-style: italic;
+        }
+        .screen + .screen { margin-top: 0.6rem; }
+        .terminal {
+            background: var(--terminal-bg);
+            color: var(--terminal-fg);
+            font-family: "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+            font-size: 0.9rem;
+            line-height: 1.55;
+            padding: 1rem 1.25rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            white-space: pre;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+        }
+        .exit {
+            margin-top: 0.4rem;
+            font-family: "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+            font-size: 0.85rem;
+            color: var(--page-muted);
+        }
+        .exit-code-ok { color: var(--exit-ok); font-weight: 600; }
+        .exit-code-fail { color: var(--exit-fail); font-weight: 600; }
+        .design-flag {
+            margin-top: 0.5rem;
+            padding: 0.55rem 0.85rem;
+            background: #fff8c5;
+            border-left: 4px solid #d4a72c;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            color: #2d2410;
+        }
+        .design-flag::before {
+            content: "⚠ ";
+            color: #9a6700;
+            font-weight: 700;
+            margin-right: 0.15rem;
+        }
+        .design-flag code { background: rgba(0, 0, 0, 0.06); }
+        .prompt-sigil { color: var(--fg-blue); }
+        .stream-stdout { color: var(--stream-out); }
+        .stream-stderr { color: var(--stream-err); }
+        .timestamp { color: var(--dim); }
+        .placeholder { color: var(--dim); font-style: italic; }
+        .user-input { color: var(--fg-cyan); font-style: italic; }
+        .fg-red { color: var(--fg-red); }
+        .fg-green { color: var(--fg-green); }
+        .fg-yellow { color: var(--fg-yellow); }
+        .fg-blue { color: var(--fg-blue); }
+        .fg-cyan { color: var(--fg-cyan); }
+        .fg-magenta { color: var(--fg-magenta); }
+        .bold { font-weight: 600; }
+        .dim { color: var(--dim); }
+        .italic { font-style: italic; }
+        .error-label { color: var(--fg-red); font-weight: 600; }
+        .warning-label { color: var(--fg-yellow); font-weight: 600; }
+        .success-label { color: var(--fg-green); font-weight: 600; }
+        .hint-label { color: var(--dim); font-weight: 600; }
+        .hint-text { color: var(--dim); font-style: italic; }
+    </style>
+    <style>
+        .badge-behind { color: var(--fg-yellow); }
+        .badge-non-default { color: var(--fg-blue); }
+        .badge-fetch-failed { color: var(--fg-red); }
+        .badge-repo-warning { color: var(--fg-magenta); }
+    </style>
+</head>
+<body>
+
+<h1>CLI Surface Screens — Actual CLI Screens and Errors</h1>
+<p class="meta">
+    Rendered from <code>actual-cli-screens.md</code>.
+    Do not edit screens directly — change the spec and re-render.
+</p>
+
+<section class="legend">
+    <h2>Legend</h2>
+    <dl>
+        <dt><span class="stream-stdout">S|</span></dt>
+        <dd>line written to <strong>stdout</strong> — the command result; what scripts pipe to other tools</dd>
+        <dt><span class="stream-stderr">E|</span></dt>
+        <dd>line written to <strong>stderr</strong> — progress, diagnostics, errors; not a stability contract</dd>
+        <dt><code>[exit N]</code></dt>
+        <dd>process exit code: <code>0</code> = success, <code>&gt;0</code> = failure (specific codes per the spec's exit-code map)</dd>
+        <dt><span class="user-input">&lt; user types: foo &gt;</span></dt>
+        <dd>interactive input typed by the user at a prompt</dd>
+        <dt><span class="stream-stderr">E|</span>&nbsp;&nbsp;<span class="hint-label">Hint:</span> <span class="hint-text">…</span></dt>
+        <dd>indented advice line following an error — present only when the project documents a hint system</dd>
+        <dt>⚠ <em>design flag</em></dt>
+        <dd>amber banner under the exit line — flags a screen worth design review</dd>
+    </dl>
+</section>
+
+<section class="variant">
+    <h2>V1: Discover root help</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> gcm
+<span class="stream-stdout">S|</span> Manage cloned git repositories
+<span class="stream-stdout">S|</span> 
+<span class="stream-stdout">S|</span> Usage:
+<span class="stream-stdout">S|</span>   gcm [command]
+<span class="stream-stdout">S|</span> 
+<span class="stream-stdout">S|</span> Available Commands:
+<span class="stream-stdout">S|</span>   clone       Clone a repository into its derived path
+<span class="stream-stdout">S|</span>   completion  Generate the autocompletion script for the specified shell
+<span class="stream-stdout">S|</span>   config      Manage gcm configuration
+<span class="stream-stdout">S|</span>   help        Help about any command
+<span class="stream-stdout">S|</span>   shell-init  Print shell integration for changing directory after clone
+<span class="stream-stdout">S|</span>   status      Show repository status under the clone root
+<span class="stream-stdout">S|</span> 
+<span class="stream-stdout">S|</span> Flags:
+<span class="stream-stdout">S|</span>   -h, --help   help for gcm
+<span class="stream-stdout">S|</span> 
+<span class="stream-stdout">S|</span> Use &quot;gcm [command] --help&quot; for more information about a command.
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V2: Inspect command help</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> gcm status --help
+<span class="stream-stdout">S|</span> Show repository status under the clone root
+<span class="stream-stdout">S|</span> 
+<span class="stream-stdout">S|</span> Usage:
+<span class="stream-stdout">S|</span>   gcm status [flags]
+<span class="stream-stdout">S|</span> 
+<span class="stream-stdout">S|</span> Flags:
+<span class="stream-stdout">S|</span>   -h, --help          help for status
+<span class="stream-stdout">S|</span>       --no-fetch      Use local git state without fetching remotes first
+<span class="stream-stdout">S|</span>       --non-default   Show only repositories on non-default branches
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+    </div>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> gcm shell-init --help
+<span class="stream-stdout">S|</span> Print shell integration for changing directory after clone
+<span class="stream-stdout">S|</span> 
+<span class="stream-stdout">S|</span> Usage:
+<span class="stream-stdout">S|</span>   gcm shell-init [bash|zsh|fish] [flags]
+<span class="stream-stdout">S|</span> 
+<span class="stream-stdout">S|</span> Flags:
+<span class="stream-stdout">S|</span>   -h, --help      help for shell-init
+<span class="stream-stdout">S|</span>       --install   Install shell integration in the detected shell rc file
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V3: Show default configuration</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> gcm config show
+<span class="stream-stdout">S|</span> clone_root: ~/src  # default
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V4: Set clone root</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> GCM_CONFIG=/tmp/gcm-demo/gcm.yaml gcm config set clone-root /tmp/gcm-demo/src
+<span class="stream-stdout">S|</span> Config saved to /tmp/gcm-demo/gcm.yaml
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V5: Show custom configuration</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> GCM_CONFIG=/tmp/gcm-demo/gcm.yaml gcm config show
+<span class="stream-stdout">S|</span> clone_root: /tmp/gcm-demo/src
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V6: Clone repository - new clone success</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> GCM_CONFIG=/tmp/gcm-demo/gcm.yaml gcm clone file://localhost/tmp/gcm-demo/remote/aihero.git
+<span class="stream-stderr">E|</span> Clone root /tmp/gcm-demo/src does not exist - creating it
+<span class="stream-stderr">E|</span> Cloning to /tmp/gcm-demo/src/localhost/tmp/gcm-demo/remote/aihero...
+<span class="stream-stderr">E|</span> Done.
+<span class="stream-stdout">S|</span> /tmp/gcm-demo/src/localhost/tmp/gcm-demo/remote/aihero
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V7: Clone repository - already present with matching origin</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> GCM_CONFIG=/tmp/gcm-demo/gcm.yaml gcm clone file://localhost/tmp/gcm-demo/remote/aihero.git
+<span class="stream-stdout">S|</span> /tmp/gcm-demo/src/localhost/tmp/gcm-demo/remote/aihero
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V8: Status - no repositories</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> GCM_CONFIG=/tmp/gcm-demo/gcm.yaml gcm status --no-fetch
+<span class="stream-stdout">S|</span> Repos under /tmp/gcm-demo/src:
+<span class="stream-stdout">S|</span> 0 repos — 0 current, 0 behind, 0 non-default-branch
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V9: Status - local scan with non-default dirty repository</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> GCM_CONFIG=/tmp/gcm-demo/gcm.yaml gcm status --no-fetch
+<span class="stream-stdout">S|</span> Repos under /tmp/gcm-demo/src:
+<span class="stream-stdout">S|</span> localhost/tmp/gcm-demo/remote/aihero  feature/docs  behind=0  dirty=1  <span class="badge-non-default">[!main]</span>
+<span class="stream-stdout">S|</span> 1 repos — 0 current, 0 behind, 1 non-default-branch
+<span class="stream-stdout">S|</span> Tips: gcm status --non-default
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V10: Status - non-default filter</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> GCM_CONFIG=/tmp/gcm-demo/gcm.yaml gcm status --no-fetch --non-default
+<span class="stream-stdout">S|</span> Repos under /tmp/gcm-demo/src:
+<span class="stream-stdout">S|</span> localhost/tmp/gcm-demo/remote/aihero  feature/docs  behind=0  dirty=1  <span class="badge-non-default">[!main]</span>
+<span class="stream-stdout">S|</span> 1 repos — 0 current, 0 behind, 1 non-default-branch
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V11: Shell init - print wrapper</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> gcm shell-init zsh
+<span class="stream-stdout">S|</span> gcm() {
+<span class="stream-stdout">S|</span>   if [ &quot;$1&quot; = &quot;clone&quot; ]; then
+<span class="stream-stdout">S|</span>     local dest
+<span class="stream-stdout">S|</span>     dest=$(command gcm &quot;$@&quot;)
+<span class="stream-stdout">S|</span>     local command_status=$?
+<span class="stream-stdout">S|</span>     if [ $command_status -eq 0 ] &amp;&amp; [ -n &quot;$dest&quot; ]; then
+<span class="stream-stdout">S|</span>       cd &quot;$dest&quot;
+<span class="stream-stdout">S|</span>     fi
+<span class="stream-stdout">S|</span>     return $command_status
+<span class="stream-stdout">S|</span>   else
+<span class="stream-stdout">S|</span>     command gcm &quot;$@&quot;
+<span class="stream-stdout">S|</span>   fi
+<span class="stream-stdout">S|</span> }
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V12: Shell init - install success</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> HOME=/tmp/gcm-demo/home SHELL=/bin/zsh gcm shell-init --install zsh
+<span class="stream-stderr">E|</span> Installed in /tmp/gcm-demo/home/.zshrc. Reload your shell or run: source /tmp/gcm-demo/home/.zshrc
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+        <div class="design-flag">
+            Current implementation writes install status to stderr and no stdout path.
+            Verify whether this is the intended command-result contract.
+        </div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V13: Shell init - install already present</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> HOME=/tmp/gcm-demo/home SHELL=/bin/zsh gcm shell-init --install zsh
+<span class="stream-stderr">E|</span> Already installed in /tmp/gcm-demo/home/.zshrc.
+</div>
+        <div class="exit">[exit <span class="exit-code-ok">0</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V14: Clone repository - missing URL</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> gcm clone
+<span class="stream-stderr">E|</span> accepts 1 arg(s), received 0
+</div>
+        <div class="exit">[exit <span class="exit-code-fail">2</span>]</div>
+        <div class="design-flag">
+            Actual usage error does not name the missing <code>url</code> argument and does not use the output-spec <code>Error:</code> form.
+        </div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V15: Clone repository - malformed URL</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> gcm clone not-a-url
+<span class="stream-stderr">E|</span> parse repository URL &quot;not-a-url&quot;: missing hostname
+</div>
+        <div class="exit">[exit <span class="exit-code-fail">1</span>]</div>
+        <div class="design-flag">
+            Actual runtime error does not use the output-spec <code>Error:</code> form.
+        </div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V16: Clone repository - destination blocked</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> GCM_CONFIG=/tmp/gcm-demo/gcm.yaml gcm clone https://github.com/example/blocked.git
+<span class="stream-stderr">E|</span> cannot clone to /tmp/gcm-demo/src/github.com/example/blocked: destination exists but is not a git repository. Move or remove it first, then run gcm clone again
+</div>
+        <div class="exit">[exit <span class="exit-code-fail">1</span>]</div>
+        <div class="design-flag">
+            Actual runtime error includes remediation in the reason sentence but does not use the output-spec <code>Error:</code> form.
+        </div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V17: Shell init - unsupported shell</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> gcm shell-init tcsh
+<span class="stream-stderr">E|</span> <span class="error-label">Error:</span> shell &quot;tcsh&quot;: unsupported shell
+</div>
+        <div class="exit">[exit <span class="exit-code-fail">2</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V18: Unknown command</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> gcm frobnicate
+<span class="stream-stderr">E|</span> unknown command &quot;frobnicate&quot; for &quot;gcm&quot;
+</div>
+        <div class="exit">[exit <span class="exit-code-fail">2</span>]</div>
+    </div>
+</section>
+
+<section class="variant">
+    <h2>V19: Unknown flag</h2>
+    <div class="screen">
+        <div class="terminal"><span class="prompt-sigil">$</span> gcm status --json
+<span class="stream-stderr">E|</span> unknown flag: --json
+</div>
+        <div class="exit">[exit <span class="exit-code-fail">2</span>]</div>
+    </div>
+</section>
+
+</body>
+</html>
