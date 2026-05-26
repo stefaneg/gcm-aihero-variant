@@ -29,7 +29,7 @@ A repository that has uncommitted local changes (tracked or untracked files modi
 _Avoid_: Modified, uncommitted, changed
 
 **Default Branch**:
-The branch a repository's remote designates as its primary branch, read from `refs/remotes/origin/HEAD`. Not assumed to be `main` — varies per repository.
+The branch a repository's remote designates as its primary branch, read from `refs/remotes/origin/HEAD`. Not assumed to be `main` — varies per repository. When the remote exists but `refs/remotes/origin/HEAD` is unset, the default branch is **unknown**; gcm does not guess. When the repository has no remote, the concept does not apply.
 _Avoid_: Main branch, master branch
 
 **Behind**:

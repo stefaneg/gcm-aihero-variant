@@ -5,7 +5,9 @@ This document defines the project-wide output contract for `gcm` commands.
 ## Streams
 
 - stdout is reserved for command results that a human can read or a script can pipe onward.
-- stderr is reserved for diagnostics, warnings, and errors.
+- stderr is reserved for diagnostics, warnings, errors, and progress messages.
+- Progress messages (e.g. "Cloning to ...", "Done.") are diagnostics and belong on stderr, never stdout.
+- For action commands that change state, the **result** on stdout is the identifier of what was produced or affected — typically a path. The result is emitted as a single bare line (no `S|` prefix, no surrounding decoration) so that callers can capture it with `dest=$(gcm <subcommand> ...)`. This contract is what enables shell-function wrappers (see `gcm shell-init`) to compose with action commands without parsing or special modes.
 - Commands must not interleave diagnostics into stdout.
 - Success output should be plain text. `gcm` does not support JSON output in v1.
 
@@ -55,7 +57,7 @@ Error: <noun> "<identifier>": <reason>
 
 - v1 does not support dry-run flags.
 - Destructive commands should prompt before destructive action unless they are explicitly designed as non-destructive or idempotent.
-- `gcm clone` is idempotent: rerunning a clone against an existing git repository skips the clone and exits 0.
+- `gcm clone` is idempotent: rerunning a clone against an existing git repository with a matching `origin` URL re-emits the destination path on stdout and exits 0 with no progress noise on stderr. A pre-existing git repository whose `origin` does not match the requested URL is treated as an error (exit 1), not as an idempotent skip.
 - `gcm config set clone-root` writes configuration immediately when invoked with a path.
 
 ## Help and Discoverability
