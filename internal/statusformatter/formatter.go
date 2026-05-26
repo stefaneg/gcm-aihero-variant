@@ -10,8 +10,10 @@ import (
 )
 
 type Options struct {
-	StdoutIsTTY bool
-	NoColor     bool
+	StdoutIsTTY          bool
+	NoColor              bool
+	NonDefaultOnly       bool
+	TotalRepositoryCount int
 }
 
 type formattedRow struct {
@@ -51,33 +53,48 @@ func Format(cloneRoot string, results []statuscollector.Result, options Options)
 	builder.WriteString(cloneRoot)
 	builder.WriteString(":\n")
 
-	for _, row := range rows {
-		badges := formatBadges(row.result, options)
-		builder.WriteString(fmt.Sprintf(
-			"%-*s  %-*s  behind=%d  dirty=%d",
-			pathWidth,
-			row.relativePath,
-			branchWidth,
-			row.result.CurrentBranch,
-			row.result.CommitsBehind,
-			row.result.DirtyCount,
-		))
-		if badges != "" {
-			builder.WriteString("  ")
-			builder.WriteString(badges)
+	totalRepositoryCount := options.TotalRepositoryCount
+	if totalRepositoryCount == 0 {
+		totalRepositoryCount = len(rows)
+	}
+
+	if options.NonDefaultOnly && len(rows) == 0 && totalRepositoryCount > 0 {
+		builder.WriteString("No repositories on non-default branches.\n")
+	} else {
+		for _, row := range rows {
+			badges := formatBadges(row.result, options)
+			builder.WriteString(fmt.Sprintf(
+				"%-*s  %-*s  behind=%d  dirty=%d",
+				pathWidth,
+				row.relativePath,
+				branchWidth,
+				row.result.CurrentBranch,
+				row.result.CommitsBehind,
+				row.result.DirtyCount,
+			))
+			if badges != "" {
+				builder.WriteString("  ")
+				builder.WriteString(badges)
+			}
+			builder.WriteByte('\n')
 		}
-		builder.WriteByte('\n')
 	}
 
 	currentCount, behindCount, nonDefaultCount := summarize(rows)
-	builder.WriteString(fmt.Sprintf(
-		"%d repos — %d current, %d behind, %d non-default-branch\n",
-		len(rows),
-		currentCount,
-		behindCount,
-		nonDefaultCount,
-	))
-	builder.WriteString("Tips: gcm pull; gcm status --non-default\n")
+	if options.NonDefaultOnly && len(rows) == 0 && totalRepositoryCount > 0 {
+		builder.WriteString(fmt.Sprintf("%d repositories, 0 non-default.\n", totalRepositoryCount))
+	} else {
+		builder.WriteString(fmt.Sprintf(
+			"%d repos — %d current, %d behind, %d non-default-branch\n",
+			len(rows),
+			currentCount,
+			behindCount,
+			nonDefaultCount,
+		))
+		if len(rows) > 0 && !options.NonDefaultOnly {
+			builder.WriteString("Tips: gcm status --non-default\n")
+		}
+	}
 
 	return builder.String(), nil
 }

@@ -61,7 +61,7 @@ func TestFormatBuildsPlainTextStatusTable(t *testing.T) {
 		"github.com/acme/behind   main           behind=3  dirty=0  [behind]\n" +
 		"github.com/acme/current  main           behind=0  dirty=0\n" +
 		"5 repos — 1 current, 2 behind, 2 non-default-branch\n" +
-		"Tips: gcm pull; gcm status --non-default\n"
+		"Tips: gcm status --non-default\n"
 
 	if got != want {
 		t.Fatalf("Format() = %q, want %q", got, want)
@@ -195,6 +195,65 @@ func TestFormatSortsDefaultUnknownInIncompleteDataTier(t *testing.T) {
 	}
 	if strings.Contains(got, "[!]") {
 		t.Fatalf("Format() = %q, did not want non-default badge for unknown default branch", got)
+	}
+}
+
+func TestFormatShowsFilterAwareEmptyNonDefaultMessage(t *testing.T) {
+	got, err := statusformatter.Format("/repos", nil, statusformatter.Options{
+		NonDefaultOnly:       true,
+		TotalRepositoryCount: 42,
+	})
+	if err != nil {
+		t.Fatalf("Format returned error: %v", err)
+	}
+
+	want := "" +
+		"Repos under /repos:\n" +
+		"No repositories on non-default branches.\n" +
+		"42 repositories, 0 non-default.\n"
+	if got != want {
+		t.Fatalf("Format() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatLeavesFullyEmptyCloneRootUnchangedForNonDefaultFilter(t *testing.T) {
+	got, err := statusformatter.Format("/repos", nil, statusformatter.Options{
+		NonDefaultOnly: true,
+	})
+	if err != nil {
+		t.Fatalf("Format returned error: %v", err)
+	}
+
+	want := "" +
+		"Repos under /repos:\n" +
+		"0 repos — 0 current, 0 behind, 0 non-default-branch\n"
+	if got != want {
+		t.Fatalf("Format() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatDropsPullTipButKeepsNonDefaultTipForPopulatedStatus(t *testing.T) {
+	cloneRoot := "/repos"
+	results := []statuscollector.Result{
+		{
+			RepositoryPath: "/repos/github.com/acme/current",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+		},
+	}
+
+	got, err := statusformatter.Format(cloneRoot, results, statusformatter.Options{})
+	if err != nil {
+		t.Fatalf("Format returned error: %v", err)
+	}
+
+	if strings.Contains(got, "gcm pull") {
+		t.Fatalf("Format() = %q, did not want gcm pull tip", got)
+	}
+	if !strings.Contains(got, "Tips: gcm status --non-default") {
+		t.Fatalf("Format() = %q, want non-default tip", got)
 	}
 }
 

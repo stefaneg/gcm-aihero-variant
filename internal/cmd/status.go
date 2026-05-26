@@ -63,8 +63,10 @@ func newStatusCommand() *cobra.Command {
 			}
 
 			output, err := statusformatter.Format(cloneRoot, results, statusformatter.Options{
-				StdoutIsTTY: writerIsTTY(command.OutOrStdout()),
-				NoColor:     os.Getenv("NO_COLOR") != "",
+				StdoutIsTTY:          writerIsTTY(command.OutOrStdout()),
+				NoColor:              os.Getenv("NO_COLOR") != "",
+				NonDefaultOnly:       nonDefaultOnly,
+				TotalRepositoryCount: len(collected),
 			})
 			if err != nil {
 				return err

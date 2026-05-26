@@ -321,7 +321,7 @@ func TestStatusShowsFormattedTableForRepositoriesUnderCloneRoot(t *testing.T) {
 		behindRow,
 		currentRow,
 		"3 repos — 1 current, 1 behind, 1 non-default-branch",
-		"Tips: gcm pull; gcm status --non-default",
+		"Tips: gcm status --non-default",
 	} {
 		if !strings.Contains(status, want) {
 			t.Fatalf("gcm status output = %q, want %q", status, want)
@@ -369,6 +369,37 @@ func TestStatusNonDefaultFiltersTable(t *testing.T) {
 
 	if !strings.Contains(status, "1 repos — 0 current, 0 behind, 1 non-default-branch") {
 		t.Fatalf("gcm status --non-default output = %q, want filtered summary counts", status)
+	}
+}
+
+func TestStatusNonDefaultShowsFilterAwareEmptyMessage(t *testing.T) {
+	binary := buildGCM(t)
+	cloneRoot := filepath.Join(t.TempDir(), "src")
+	configPath := writeConfigFile(t, "clone_root: "+cloneRoot+"\n")
+
+	currentRemote := createBareRemote(t)
+	currentRepoPath := filepath.Join(cloneRoot, "github.com", "acme", "current")
+	cloneRemoteTo(t, currentRemote, currentRepoPath)
+
+	command := exec.Command(binary, "status", "--non-default")
+	command.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcm status --non-default failed: %v\n%s", err, output)
+	}
+
+	status := string(output)
+	for _, want := range []string{
+		"No repositories on non-default branches.",
+		"1 repositories, 0 non-default.",
+	} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("gcm status --non-default output = %q, want %q", status, want)
+		}
+	}
+
+	if strings.Contains(status, "Tips:") {
+		t.Fatalf("gcm status --non-default output = %q, did not want tip", status)
 	}
 }
 
