@@ -44,6 +44,10 @@ _Avoid_: Bulk clone, sync
 A hostname-keyed configuration entry that records the platform type (`github`, `gitlab`, `generic`), optional protocol override, and optional API token for one hostname. Optional and post-v1.
 _Avoid_: Host, host profile, remote
 
+**Project Opener**:
+A user-configured command that takes a repository directory path and opens it as a workspace (e.g., `goland`, `code`, `idea`, `cursor`). Distinct from `$EDITOR`/`$VISUAL`, which name a text-file editor for a single file. When unset, `gcm open` only changes directory and launches nothing.
+_Avoid_: IDE, editor
+
 ## Relationships
 
 - A **Hosting Platform** is keyed by exactly one hostname (e.g., `github.com`)
