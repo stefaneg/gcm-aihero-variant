@@ -139,13 +139,8 @@ func TestCloneClonesRepositoryIntoDerivedPath(t *testing.T) {
 		t.Fatalf("gcm clone failed: %v\n%s", err, output)
 	}
 
-	cloningLine := "Cloning to " + wantPath + "..."
-	if !strings.Contains(string(output), cloningLine) {
-		t.Fatalf("gcm clone output = %q, want it to mention %q", output, cloningLine)
-	}
-
-	if strings.Index(string(output), cloningLine) > strings.Index(string(output), "Done.") {
-		t.Fatalf("gcm clone output = %q, want derived path announcement before completion", output)
+	if !strings.Contains(string(output), wantPath+"\n") {
+		t.Fatalf("gcm clone output = %q, want derived path %q", output, wantPath)
 	}
 
 	assertGitDirExists(t, wantPath)
@@ -204,8 +199,8 @@ func TestCloneReportsAlreadyClonedDestination(t *testing.T) {
 		t.Fatalf("second gcm clone failed: %v\n%s", err, output)
 	}
 
-	if !strings.Contains(string(output), "Already cloned at "+wantPath) {
-		t.Fatalf("second gcm clone output = %q, want already-cloned message for %q", output, wantPath)
+	if got := string(output); got != wantPath+"\n" {
+		t.Fatalf("second gcm clone output = %q, want %q", got, wantPath+"\n")
 	}
 }
 

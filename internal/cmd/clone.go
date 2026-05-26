@@ -43,10 +43,6 @@ func newCloneCommand() *cobra.Command {
 			}
 
 			destinationPath := parts.DerivedPath(cloneRoot)
-			if _, err := fmt.Fprintln(command.OutOrStdout(), "Cloning to "+destinationPath+"..."); err != nil {
-				return err
-			}
-
 			if err := ensureCloneRoot(command.ErrOrStderr(), cloneRoot); err != nil {
 				return err
 			}
@@ -58,7 +54,7 @@ func newCloneCommand() *cobra.Command {
 
 			switch state {
 			case destinationAlreadyCloned:
-				_, err := fmt.Fprintln(command.OutOrStdout(), "Already cloned at "+destinationPath)
+				_, err := fmt.Fprintln(command.OutOrStdout(), destinationPath)
 				return err
 			case destinationBlocked:
 				return fmt.Errorf("cannot clone to %s: destination exists but is not a git repository. Move or remove it first, then run gcm clone again", destinationPath)
@@ -68,11 +64,19 @@ func newCloneCommand() *cobra.Command {
 				return fmt.Errorf("create parent directories for %q: %w", destinationPath, err)
 			}
 
+			if _, err := fmt.Fprintln(command.ErrOrStderr(), "Cloning to "+destinationPath+"..."); err != nil {
+				return err
+			}
+
 			if err := newGitRunner().Clone(args[0], destinationPath); err != nil {
 				return err
 			}
 
-			_, err = fmt.Fprintln(command.OutOrStdout(), "Done.")
+			if _, err := fmt.Fprintln(command.ErrOrStderr(), "Done."); err != nil {
+				return err
+			}
+
+			_, err = fmt.Fprintln(command.OutOrStdout(), destinationPath)
 			return err
 		},
 	}

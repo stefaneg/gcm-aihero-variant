@@ -21,6 +21,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newCloneCommand())
 	root.AddCommand(newStatusCommand())
 	root.AddCommand(newConfigCommand())
+	root.AddCommand(newShellInitCommand())
 
 	return root
 }
