@@ -73,7 +73,7 @@ After restarting your shell, `gcm clone <url>` changes into the cloned repositor
 
 See the rendered CLI examples and screen states on GitHub Pages:
 
-[cli screens](https://stefaneg.github.io/gcm-aihero-variant/cli-surface/actual-cli-screens-screens.html)
+[cli screens](https://stefaneg.github.io/gcm-aihero-variant/cli-surface/actual-cli-screens.html)
 
 Common commands:
 
