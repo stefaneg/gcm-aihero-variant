@@ -11,6 +11,7 @@ import (
 
 type Runner interface {
 	Clone(url, destPath string) error
+	OriginURL(repoPath string) (string, error)
 	Fetch(repoPath string) error
 	CurrentBranch(repoPath string) (string, error)
 	DirtyCount(repoPath string) (int, error)
@@ -103,6 +104,15 @@ func (gitRunner *runner) Clone(url, destPath string) error {
 	}
 
 	return nil
+}
+
+func (gitRunner *runner) OriginURL(repoPath string) (string, error) {
+	output, err := gitRunner.run(repoPath, "config", "--get", "remote.origin.url")
+	if err != nil {
+		return "", gitRunner.classifyError("config", repoPath, err)
+	}
+
+	return strings.TrimSpace(output), nil
 }
 
 func (gitRunner *runner) Fetch(repoPath string) error {

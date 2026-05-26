@@ -15,6 +15,7 @@ type Fake struct {
 	mu sync.Mutex
 
 	cloneFunc         func(url, destPath string) error
+	originURLFunc     func(repoPath string) (string, error)
 	fetchFunc         func(repoPath string) error
 	currentBranchFunc func(repoPath string) (string, error)
 	dirtyCountFunc    func(repoPath string) (int, error)
@@ -22,11 +23,13 @@ type Fake struct {
 	defaultBranchFunc func(repoPath string) (string, error)
 
 	currentBranchValue string
+	originURLValue     string
 	dirtyCountValue    int
 	commitsBehindValue int
 	defaultBranchValue string
 
 	cloneCalls         []CloneCall
+	originURLCalls     []string
 	fetchCalls         []string
 	currentBranchCalls []string
 	dirtyCountCalls    []string
@@ -52,6 +55,13 @@ func (fakeRunner *Fake) StubFetch(fn func(repoPath string) error) {
 	defer fakeRunner.mu.Unlock()
 
 	fakeRunner.fetchFunc = fn
+}
+
+func (fakeRunner *Fake) StubOriginURL(fn func(repoPath string) (string, error)) {
+	fakeRunner.mu.Lock()
+	defer fakeRunner.mu.Unlock()
+
+	fakeRunner.originURLFunc = fn
 }
 
 func (fakeRunner *Fake) StubCurrentBranch(fn func(repoPath string) (string, error)) {
@@ -96,6 +106,13 @@ func (fakeRunner *Fake) SetCurrentBranch(branch string) {
 	fakeRunner.currentBranchValue = branch
 }
 
+func (fakeRunner *Fake) SetOriginURL(originURL string) {
+	fakeRunner.mu.Lock()
+	defer fakeRunner.mu.Unlock()
+
+	fakeRunner.originURLValue = originURL
+}
+
 func (fakeRunner *Fake) SetCommitsBehind(value int) {
 	fakeRunner.mu.Lock()
 	defer fakeRunner.mu.Unlock()
@@ -121,6 +138,20 @@ func (fakeRunner *Fake) Clone(url, destPath string) error {
 	}
 
 	return nil
+}
+
+func (fakeRunner *Fake) OriginURL(repoPath string) (string, error) {
+	fakeRunner.mu.Lock()
+	fakeRunner.originURLCalls = append(fakeRunner.originURLCalls, repoPath)
+	originURLFunc := fakeRunner.originURLFunc
+	originURLValue := fakeRunner.originURLValue
+	fakeRunner.mu.Unlock()
+
+	if originURLFunc != nil {
+		return originURLFunc(repoPath)
+	}
+
+	return originURLValue, nil
 }
 
 func (fakeRunner *Fake) Fetch(repoPath string) error {
@@ -197,6 +228,13 @@ func (fakeRunner *Fake) CloneCalls() []CloneCall {
 	defer fakeRunner.mu.Unlock()
 
 	return append([]CloneCall(nil), fakeRunner.cloneCalls...)
+}
+
+func (fakeRunner *Fake) OriginURLCalls() []string {
+	fakeRunner.mu.Lock()
+	defer fakeRunner.mu.Unlock()
+
+	return append([]string(nil), fakeRunner.originURLCalls...)
 }
 
 func (fakeRunner *Fake) FetchCalls() []string {
