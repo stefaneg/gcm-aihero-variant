@@ -16,12 +16,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type statusCollector interface {
+	Collect(cloneRoot string, noFetch bool) ([]statuscollector.Result, error)
+}
+
+var (
+	loadEffectiveStatusConfig = func() (configstore.EffectiveConfig, error) {
+		return configstore.New().Effective()
+	}
+	newStatusCollector = func() statusCollector {
+		return statuspipeline.New(gitrunner.New())
+	}
+)
+
 func newStatusCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "status",
 		Short: "Show repository status under the clone root",
 		RunE: func(command *cobra.Command, args []string) error {
-			effectiveConfig, err := configstore.New().Effective()
+			effectiveConfig, err := loadEffectiveStatusConfig()
 			if err != nil {
 				return err
 			}
@@ -41,8 +54,7 @@ func newStatusCommand() *cobra.Command {
 				return err
 			}
 
-			pipeline := statuspipeline.New(gitrunner.New())
-			collected, err := pipeline.Collect(cloneRoot, noFetch)
+			collected, err := newStatusCollector().Collect(cloneRoot, noFetch)
 			if err != nil {
 				return err
 			}

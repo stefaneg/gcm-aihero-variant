@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -86,15 +87,16 @@ func (errorWithContext *OriginHEADNotSetError) Unwrap() error {
 }
 
 type runner struct {
-	gitBinary string
+	gitBinary  string
+	runCommand func(gitBinary, repoPath string, args ...string) (string, error)
 }
 
 func New() Runner {
-	return &runner{gitBinary: "git"}
+	return &runner{gitBinary: "git", runCommand: runGitCommand}
 }
 
 func NewForTesting(gitBinary string) Runner {
-	return &runner{gitBinary: gitBinary}
+	return &runner{gitBinary: gitBinary, runCommand: runGitCommand}
 }
 
 func (gitRunner *runner) Clone(url, destPath string) error {
@@ -181,12 +183,16 @@ func (gitRunner *runner) DefaultBranch(repoPath string) (string, error) {
 }
 
 func (gitRunner *runner) run(repoPath string, args ...string) (string, error) {
+	return gitRunner.runCommand(gitRunner.gitBinary, repoPath, args...)
+}
+
+func runGitCommand(gitBinary string, repoPath string, args ...string) (string, error) {
 	commandArgs := args
 	if repoPath != "" {
 		commandArgs = append([]string{"-C", repoPath}, args...)
 	}
 
-	cmd := exec.Command(gitRunner.gitBinary, commandArgs...)
+	cmd := exec.Command(gitBinary, commandArgs...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
@@ -203,7 +209,7 @@ func (gitRunner *runner) run(repoPath string, args ...string) (string, error) {
 }
 
 func (gitRunner *runner) classifyError(operation, repoPath string, err error) error {
-	if errors.Is(err, exec.ErrNotFound) {
+	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 		return &GitNotFoundError{Binary: gitRunner.gitBinary, Err: err}
 	}
 
