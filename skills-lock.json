@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "cli-surface": {
+      "source": "/Users/gulli/src/github.com/stefaneg/llm-harness",
+      "sourceType": "local",
+      "computedHash": "d2ac590e3d47018be82c34944986a6d0cb357d9e1b21e4c7c877b5be25fc2279"
+    },
+    "package-design": {
+      "source": "/Users/gulli/src/github.com/stefaneg/llm-harness",
+      "sourceType": "local",
+      "computedHash": "c71db50d0b32df6b80e5e643f2222e5ad10ff46f25e5ba003d2cfc13e3253659"
+    }
+  }
+}

@@ -1,58 +1,71 @@
-package gitrunner_test
+package gitrunner
 
 import (
 	"errors"
-	"os"
 	"os/exec"
-	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
-
-	"git-clone-manager/internal/gitrunner"
 )
 
-func TestCloneClonesRepositoryIntoDestination(t *testing.T) {
-	remotePath := createBareRemote(t)
-	runner := gitrunner.New()
-	destinationPath := filepath.Join(t.TempDir(), "clone")
+type gitCall struct {
+	gitBinary string
+	repoPath  string
+	args      []string
+}
 
-	if err := runner.Clone(remotePath, destinationPath); err != nil {
+func newFakeRunner(fn func(repoPath string, args ...string) (string, error)) (*runner, *[]gitCall) {
+	var calls []gitCall
+	return &runner{
+		gitBinary: "git-test",
+		runCommand: func(gitBinary, repoPath string, args ...string) (string, error) {
+			calls = append(calls, gitCall{
+				gitBinary: gitBinary,
+				repoPath:  repoPath,
+				args:      append([]string(nil), args...),
+			})
+			return fn(repoPath, args...)
+		},
+	}, &calls
+}
+
+func TestCloneRunsGitCloneIntoDestination(t *testing.T) {
+	runner, calls := newFakeRunner(func(repoPath string, args ...string) (string, error) {
+		return "", nil
+	})
+
+	if err := runner.Clone("https://example.com/repo.git", "/repos/example"); err != nil {
 		t.Fatalf("Clone returned error: %v", err)
 	}
 
-	assertGitDirExists(t, destinationPath)
+	assertGitCall(t, *calls, gitCall{
+		gitBinary: "git-test",
+		args:      []string{"clone", "https://example.com/repo.git", "/repos/example"},
+	})
 }
 
-func TestFetchUpdatesRemoteTrackingReferences(t *testing.T) {
-	remotePath := createBareRemote(t)
-	clonePath := cloneRemote(t, remotePath)
-	runner := gitrunner.New()
+func TestFetchRunsGitFetchOriginInRepository(t *testing.T) {
+	runner, calls := newFakeRunner(func(repoPath string, args ...string) (string, error) {
+		return "", nil
+	})
 
-	pushCommitToRemote(t, remotePath, "second commit")
-
-	if err := runner.Fetch(clonePath); err != nil {
+	if err := runner.Fetch("/repos/example"); err != nil {
 		t.Fatalf("Fetch returned error: %v", err)
 	}
 
-	output := runGit(t, clonePath, "rev-parse", "refs/remotes/origin/main")
-	if output == "" {
-		t.Fatal("origin/main was not updated by fetch")
-	}
+	assertGitCall(t, *calls, gitCall{
+		gitBinary: "git-test",
+		repoPath:  "/repos/example",
+		args:      []string{"fetch", "origin"},
+	})
 }
 
-func TestDirtyCountCountsTrackedAndUntrackedChanges(t *testing.T) {
-	remotePath := createBareRemote(t)
-	clonePath := cloneRemote(t, remotePath)
-	runner := gitrunner.New()
+func TestDirtyCountCountsPorcelainRows(t *testing.T) {
+	runner, _ := newFakeRunner(func(repoPath string, args ...string) (string, error) {
+		return " M README.md\n?? notes.txt\n\n", nil
+	})
 
-	if err := os.WriteFile(filepath.Join(clonePath, "README.md"), []byte("changed\n"), 0o600); err != nil {
-		t.Fatalf("write tracked change: %v", err)
-	}
-
-	if err := os.WriteFile(filepath.Join(clonePath, "notes.txt"), []byte("new file\n"), 0o600); err != nil {
-		t.Fatalf("write untracked change: %v", err)
-	}
-
-	dirtyCount, err := runner.DirtyCount(clonePath)
+	dirtyCount, err := runner.DirtyCount("/repos/example")
 	if err != nil {
 		t.Fatalf("DirtyCount returned error: %v", err)
 	}
@@ -63,13 +76,11 @@ func TestDirtyCountCountsTrackedAndUntrackedChanges(t *testing.T) {
 }
 
 func TestCurrentBranchReturnsCheckedOutBranchName(t *testing.T) {
-	remotePath := createBareRemote(t)
-	clonePath := cloneRemote(t, remotePath)
-	runner := gitrunner.New()
+	runner, _ := newFakeRunner(func(repoPath string, args ...string) (string, error) {
+		return "feature/status\n", nil
+	})
 
-	runGit(t, clonePath, "checkout", "-b", "feature/status")
-
-	currentBranch, err := runner.CurrentBranch(clonePath)
+	currentBranch, err := runner.CurrentBranch("/repos/example")
 	if err != nil {
 		t.Fatalf("CurrentBranch returned error: %v", err)
 	}
@@ -80,54 +91,56 @@ func TestCurrentBranchReturnsCheckedOutBranchName(t *testing.T) {
 }
 
 func TestCommitsBehindCountsBehindRemoteDefaultBranch(t *testing.T) {
-	remotePath := createBareRemote(t)
-	clonePath := cloneRemote(t, remotePath)
-	runner := gitrunner.New()
+	runner, calls := newFakeRunner(func(repoPath string, args ...string) (string, error) {
+		switch args[0] {
+		case "symbolic-ref":
+			return "origin/main\n", nil
+		case "rev-list":
+			return "3\n", nil
+		default:
+			t.Fatalf("unexpected git args: %v", args)
+			return "", nil
+		}
+	})
 
-	pushCommitToRemote(t, remotePath, "second commit")
-
-	if err := runner.Fetch(clonePath); err != nil {
-		t.Fatalf("Fetch returned error: %v", err)
-	}
-
-	commitsBehind, err := runner.CommitsBehind(clonePath)
+	commitsBehind, err := runner.CommitsBehind("/repos/example")
 	if err != nil {
 		t.Fatalf("CommitsBehind returned error: %v", err)
 	}
 
-	if commitsBehind != 1 {
-		t.Fatalf("CommitsBehind = %d, want %d", commitsBehind, 1)
+	if commitsBehind != 3 {
+		t.Fatalf("CommitsBehind = %d, want %d", commitsBehind, 3)
+	}
+	if got := (*calls)[1].args; !reflect.DeepEqual(got, []string{"rev-list", "--count", "refs/heads/main..refs/remotes/origin/main"}) {
+		t.Fatalf("rev-list args = %#v, want default branch comparison", got)
 	}
 }
 
-func TestCommitsBehindFallsBackToMainWhenOriginHEADIsUnset(t *testing.T) {
-	remotePath := createBareRemote(t)
-	clonePath := cloneRemote(t, remotePath)
-	runner := gitrunner.New()
+func TestCommitsBehindReturnsErrorWhenOriginHEADIsUnset(t *testing.T) {
+	runner, _ := newFakeRunner(func(repoPath string, args ...string) (string, error) {
+		return "", &commandError{
+			stderr: "fatal: ref refs/remotes/origin/HEAD is not a symbolic ref",
+			err:    &exec.ExitError{},
+		}
+	})
 
-	pushCommitToRemote(t, remotePath, "second commit")
-	if err := runner.Fetch(clonePath); err != nil {
-		t.Fatalf("Fetch returned error: %v", err)
+	_, err := runner.CommitsBehind("/repos/example")
+	if err == nil {
+		t.Fatal("CommitsBehind unexpectedly succeeded")
 	}
 
-	runGit(t, clonePath, "remote", "set-head", "origin", "--delete")
-
-	commitsBehind, err := runner.CommitsBehind(clonePath)
-	if err != nil {
-		t.Fatalf("CommitsBehind returned error: %v", err)
-	}
-
-	if commitsBehind != 1 {
-		t.Fatalf("CommitsBehind = %d, want %d", commitsBehind, 1)
+	var originHeadErr *OriginHEADNotSetError
+	if !errors.As(err, &originHeadErr) {
+		t.Fatalf("CommitsBehind error type = %T, want *OriginHEADNotSetError", err)
 	}
 }
 
 func TestDefaultBranchReturnsOriginHEADBranchName(t *testing.T) {
-	remotePath := createBareRemote(t)
-	clonePath := cloneRemote(t, remotePath)
-	runner := gitrunner.New()
+	runner, _ := newFakeRunner(func(repoPath string, args ...string) (string, error) {
+		return "origin/main\n", nil
+	})
 
-	defaultBranch, err := runner.DefaultBranch(clonePath)
+	defaultBranch, err := runner.DefaultBranch("/repos/example")
 	if err != nil {
 		t.Fatalf("DefaultBranch returned error: %v", err)
 	}
@@ -137,172 +150,145 @@ func TestDefaultBranchReturnsOriginHEADBranchName(t *testing.T) {
 	}
 }
 
-func TestDefaultBranchReturnsErrorWhenOriginHEADIsUnset(t *testing.T) {
-	remotePath := createBareRemote(t)
-	clonePath := cloneRemote(t, remotePath)
-	runner := gitrunner.New()
+func TestDefaultBranchRejectsRefOutsideOrigin(t *testing.T) {
+	runner, _ := newFakeRunner(func(repoPath string, args ...string) (string, error) {
+		return "upstream/main\n", nil
+	})
 
-	runGit(t, clonePath, "remote", "set-head", "origin", "--delete")
-
-	_, err := runner.DefaultBranch(clonePath)
+	_, err := runner.DefaultBranch("/repos/example")
 	if err == nil {
 		t.Fatal("DefaultBranch unexpectedly succeeded")
 	}
 
-	var originHeadErr *gitrunner.OriginHEADNotSetError
-	if !errors.As(err, &originHeadErr) {
-		t.Fatalf("DefaultBranch error type = %T, want *gitrunner.OriginHEADNotSetError", err)
+	if !strings.Contains(err.Error(), "does not point at origin/<branch>") {
+		t.Fatalf("DefaultBranch error = %v, want invalid origin HEAD message", err)
 	}
 }
 
-func TestFetchReturnsNoRemoteErrorWhenOriginIsMissing(t *testing.T) {
-	repoPath := initLocalRepository(t)
-	runner := gitrunner.New()
+func TestOriginURLReturnsConfiguredOrigin(t *testing.T) {
+	runner, _ := newFakeRunner(func(repoPath string, args ...string) (string, error) {
+		return "https://example.com/acme/repo.git\n", nil
+	})
 
-	err := runner.Fetch(repoPath)
-	if err == nil {
-		t.Fatal("Fetch unexpectedly succeeded")
+	originURL, err := runner.OriginURL("/repos/example")
+	if err != nil {
+		t.Fatalf("OriginURL returned error: %v", err)
 	}
 
-	var noRemoteErr *gitrunner.NoRemoteError
-	if !errors.As(err, &noRemoteErr) {
-		t.Fatalf("Fetch error type = %T, want *gitrunner.NoRemoteError", err)
+	if originURL != "https://example.com/acme/repo.git" {
+		t.Fatalf("OriginURL = %q, want configured URL", originURL)
+	}
+}
+
+func TestClassifiesGitErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		operation  string
+		stderr     string
+		assertType func(error) bool
+	}{
+		{
+			name:      "repository missing",
+			operation: "status",
+			stderr:    "fatal: cannot change to '/missing': No such file or directory",
+			assertType: func(err error) bool {
+				var target *RepositoryNotFoundError
+				return errors.As(err, &target)
+			},
+		},
+		{
+			name:      "origin head not set",
+			operation: "symbolic-ref",
+			stderr:    "fatal: ref refs/remotes/origin/HEAD is not a symbolic ref",
+			assertType: func(err error) bool {
+				var target *OriginHEADNotSetError
+				return errors.As(err, &target)
+			},
+		},
+		{
+			name:      "no remote",
+			operation: "fetch",
+			stderr:    "fatal: no remote repository specified",
+			assertType: func(err error) bool {
+				var target *NoRemoteError
+				return errors.As(err, &target)
+			},
+		},
+		{
+			name:      "network",
+			operation: "fetch",
+			stderr:    "fatal: could not read from remote repository",
+			assertType: func(err error) bool {
+				var target *NetworkError
+				return errors.As(err, &target)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runner, _ := newFakeRunner(func(repoPath string, args ...string) (string, error) {
+				return "", &commandError{stderr: test.stderr, err: &exec.ExitError{}}
+			})
+
+			err := runner.classifyError(test.operation, "/repos/example", &commandError{stderr: test.stderr, err: &exec.ExitError{}})
+			if err == nil {
+				t.Fatal("classifyError unexpectedly returned nil")
+			}
+
+			if !test.assertType(err) {
+				t.Fatalf("error type = %T, error = %v", err, err)
+			}
+		})
 	}
 }
 
 func TestCloneReturnsGitNotFoundErrorWhenGitBinaryIsMissing(t *testing.T) {
-	runner := gitrunner.NewForTesting("git-does-not-exist")
+	runner, _ := newFakeRunner(func(repoPath string, args ...string) (string, error) {
+		return "", exec.ErrNotFound
+	})
 
-	err := runner.Clone("https://example.com/repo.git", filepath.Join(t.TempDir(), "clone"))
+	err := runner.Clone("https://example.com/repo.git", "/repos/example")
 	if err == nil {
 		t.Fatal("Clone unexpectedly succeeded")
 	}
 
-	var gitNotFoundErr *gitrunner.GitNotFoundError
+	var gitNotFoundErr *GitNotFoundError
 	if !errors.As(err, &gitNotFoundErr) {
-		t.Fatalf("Clone error type = %T, want *gitrunner.GitNotFoundError", err)
+		t.Fatalf("Clone error type = %T, want *GitNotFoundError", err)
 	}
 }
 
-func TestFetchReturnsNetworkErrorWhenRemoteCannotBeReached(t *testing.T) {
-	repoPath := initLocalRepository(t)
-	runGit(t, repoPath, "remote", "add", "origin", "ssh://127.0.0.1:1/example/repo.git")
-	runner := gitrunner.New()
+func TestCommitsBehindReturnsParseErrorForInvalidCount(t *testing.T) {
+	runner, _ := newFakeRunner(func(repoPath string, args ...string) (string, error) {
+		switch args[0] {
+		case "symbolic-ref":
+			return "origin/main\n", nil
+		case "rev-list":
+			return "not-a-number\n", nil
+		default:
+			t.Fatalf("unexpected git args: %v", args)
+			return "", nil
+		}
+	})
 
-	err := runner.Fetch(repoPath)
+	_, err := runner.CommitsBehind("/repos/example")
 	if err == nil {
-		t.Fatal("Fetch unexpectedly succeeded")
+		t.Fatal("CommitsBehind unexpectedly succeeded")
 	}
 
-	var networkErr *gitrunner.NetworkError
-	if !errors.As(err, &networkErr) {
-		t.Fatalf("Fetch error type = %T, want *gitrunner.NetworkError", err)
-	}
-}
-
-func TestRepositoryOperationsReturnRepositoryNotFoundErrorForMissingPath(t *testing.T) {
-	runner := gitrunner.New()
-
-	_, err := runner.DirtyCount(filepath.Join(t.TempDir(), "missing"))
-	if err == nil {
-		t.Fatal("DirtyCount unexpectedly succeeded")
-	}
-
-	var repositoryNotFoundErr *gitrunner.RepositoryNotFoundError
-	if !errors.As(err, &repositoryNotFoundErr) {
-		t.Fatalf("DirtyCount error type = %T, want *gitrunner.RepositoryNotFoundError", err)
+	if !strings.Contains(err.Error(), "parse commits behind count") {
+		t.Fatalf("CommitsBehind error = %v, want parse error", err)
 	}
 }
 
-func createBareRemote(t *testing.T) string {
+func assertGitCall(t *testing.T, calls []gitCall, want gitCall) {
 	t.Helper()
 
-	remotePath := filepath.Join(t.TempDir(), "remote.git")
-	runGitInDir(t, "", "init", "--bare", "--initial-branch=main", remotePath)
-
-	worktreePath := filepath.Join(t.TempDir(), "seed")
-	runGitInDir(t, "", "clone", remotePath, worktreePath)
-	writeFile(t, filepath.Join(worktreePath, "README.md"), "hello\n")
-	runGit(t, worktreePath, "add", "README.md")
-	runGit(t, worktreePath, "commit", "-m", "initial commit")
-	runGit(t, worktreePath, "push", "origin", "main")
-	runGit(t, worktreePath, "remote", "set-head", "origin", "main")
-
-	return remotePath
-}
-
-func cloneRemote(t *testing.T, remotePath string) string {
-	t.Helper()
-
-	clonePath := filepath.Join(t.TempDir(), "clone")
-	runGitInDir(t, "", "clone", remotePath, clonePath)
-	return clonePath
-}
-
-func pushCommitToRemote(t *testing.T, remotePath, message string) {
-	t.Helper()
-
-	worktreePath := filepath.Join(t.TempDir(), "worktree")
-	runGitInDir(t, "", "clone", remotePath, worktreePath)
-	writeFile(t, filepath.Join(worktreePath, "README.md"), message+"\n")
-	runGit(t, worktreePath, "add", "README.md")
-	runGit(t, worktreePath, "commit", "-m", message)
-	runGit(t, worktreePath, "push", "origin", "main")
-}
-
-func initLocalRepository(t *testing.T) string {
-	t.Helper()
-
-	repoPath := filepath.Join(t.TempDir(), "repo")
-	runGitInDir(t, "", "init", "--initial-branch=main", repoPath)
-	writeFile(t, filepath.Join(repoPath, "README.md"), "hello\n")
-	runGit(t, repoPath, "add", "README.md")
-	runGit(t, repoPath, "commit", "-m", "initial commit")
-	return repoPath
-}
-
-func assertGitDirExists(t *testing.T, repoPath string) {
-	t.Helper()
-
-	info, err := os.Stat(filepath.Join(repoPath, ".git"))
-	if err != nil {
-		t.Fatalf("stat .git directory: %v", err)
+	if len(calls) != 1 {
+		t.Fatalf("git calls = %#v, want one call", calls)
 	}
-
-	if !info.IsDir() {
-		t.Fatalf(".git exists but is not a directory")
+	if calls[0].gitBinary != want.gitBinary || calls[0].repoPath != want.repoPath || !reflect.DeepEqual(calls[0].args, want.args) {
+		t.Fatalf("git call = %#v, want %#v", calls[0], want)
 	}
-}
-
-func writeFile(t *testing.T, path, contents string) {
-	t.Helper()
-
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatalf("write %s: %v", path, err)
-	}
-}
-
-func runGit(t *testing.T, repoPath string, args ...string) string {
-	t.Helper()
-	return runGitInDir(t, repoPath, args...)
-}
-
-func runGitInDir(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=Codex Test",
-		"GIT_AUTHOR_EMAIL=codex@example.com",
-		"GIT_COMMITTER_NAME=Codex Test",
-		"GIT_COMMITTER_EMAIL=codex@example.com",
-	)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v failed: %v\n%s", args, err, output)
-	}
-
-	return string(output)
 }

@@ -16,12 +16,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type statusCollector interface {
+	Collect(cloneRoot string, noFetch bool) ([]statuscollector.Result, error)
+}
+
+var (
+	loadEffectiveStatusConfig = func() (configstore.EffectiveConfig, error) {
+		return configstore.New().Effective()
+	}
+	newStatusCollector = func() statusCollector {
+		return statuspipeline.New(gitrunner.New())
+	}
+)
+
 func newStatusCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "status",
 		Short: "Show repository status under the clone root",
 		RunE: func(command *cobra.Command, args []string) error {
-			effectiveConfig, err := configstore.New().Effective()
+			effectiveConfig, err := loadEffectiveStatusConfig()
 			if err != nil {
 				return err
 			}
@@ -41,8 +54,7 @@ func newStatusCommand() *cobra.Command {
 				return err
 			}
 
-			pipeline := statuspipeline.New(gitrunner.New())
-			collected, err := pipeline.Collect(cloneRoot, noFetch)
+			collected, err := newStatusCollector().Collect(cloneRoot, noFetch)
 			if err != nil {
 				return err
 			}
@@ -50,7 +62,7 @@ func newStatusCommand() *cobra.Command {
 			results := make([]statuscollector.Result, 0, len(collected))
 			fetchFailed := false
 			for _, result := range collected {
-				if nonDefaultOnly && result.CurrentBranch == result.DefaultBranch {
+				if nonDefaultOnly && !statusResultIsNonDefault(result) {
 					if result.ErrorState == statuscollector.ErrorStateFetchFailed {
 						fetchFailed = true
 					}
@@ -63,8 +75,10 @@ func newStatusCommand() *cobra.Command {
 			}
 
 			output, err := statusformatter.Format(cloneRoot, results, statusformatter.Options{
-				StdoutIsTTY: writerIsTTY(command.OutOrStdout()),
-				NoColor:     os.Getenv("NO_COLOR") != "",
+				StdoutIsTTY:          writerIsTTY(command.OutOrStdout()),
+				NoColor:              os.Getenv("NO_COLOR") != "",
+				NonDefaultOnly:       nonDefaultOnly,
+				TotalRepositoryCount: len(collected),
 			})
 			if err != nil {
 				return err
@@ -87,6 +101,16 @@ func newStatusCommand() *cobra.Command {
 	command.Flags().Bool("non-default", false, "Show only repositories on non-default branches")
 
 	return command
+}
+
+func statusResultIsNonDefault(result statuscollector.Result) bool {
+	if result.ErrorState == statuscollector.ErrorStateNoRemote || result.ErrorState == statuscollector.ErrorStateDefaultUnknown {
+		return false
+	}
+	if result.DefaultBranch == "" {
+		return false
+	}
+	return result.CurrentBranch != result.DefaultBranch
 }
 
 func writerIsTTY(writer io.Writer) bool {

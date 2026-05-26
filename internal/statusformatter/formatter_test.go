@@ -61,7 +61,7 @@ func TestFormatBuildsPlainTextStatusTable(t *testing.T) {
 		"github.com/acme/behind   main           behind=3  dirty=0  [behind]\n" +
 		"github.com/acme/current  main           behind=0  dirty=0\n" +
 		"5 repos — 1 current, 2 behind, 2 non-default-branch\n" +
-		"Tips: gcm pull; gcm status --non-default\n"
+		"Tips: gcm status --non-default\n"
 
 	if got != want {
 		t.Fatalf("Format() = %q, want %q", got, want)
@@ -95,6 +95,13 @@ func TestFormatShowsErrorBadgesAndExcludesThemFromBehindAndCurrentCounts(t *test
 			ErrorState:     statuscollector.ErrorStateNoRemote,
 		},
 		{
+			RepositoryPath: "/repos/github.com/acme/default-unknown",
+			CurrentBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+			ErrorState:     statuscollector.ErrorStateDefaultUnknown,
+		},
+		{
 			RepositoryPath: "/repos/github.com/acme/current",
 			CurrentBranch:  "main",
 			DefaultBranch:  "main",
@@ -124,8 +131,129 @@ func TestFormatShowsErrorBadgesAndExcludesThemFromBehindAndCurrentCounts(t *test
 		t.Fatalf("Format() = %q, want [no-remote] badge", got)
 	}
 
-	if !strings.Contains(got, "4 repos — 1 current, 0 behind, 1 non-default-branch") {
+	if !strings.Contains(got, "[default-unknown]") {
+		t.Fatalf("Format() = %q, want [default-unknown] badge", got)
+	}
+
+	if !strings.Contains(got, "5 repos — 1 current, 0 behind, 1 non-default-branch") {
 		t.Fatalf("Format() = %q, want error states excluded from current/behind counts", got)
+	}
+}
+
+func TestFormatSortsDefaultUnknownInIncompleteDataTier(t *testing.T) {
+	cloneRoot := "/repos"
+	results := []statuscollector.Result{
+		{
+			RepositoryPath: "/repos/github.com/acme/unknown",
+			CurrentBranch:  "feature/unknown",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+			ErrorState:     statuscollector.ErrorStateDefaultUnknown,
+		},
+		{
+			RepositoryPath: "/repos/github.com/acme/current",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+		},
+		{
+			RepositoryPath: "/repos/github.com/acme/no-remote",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+			ErrorState:     statuscollector.ErrorStateNoRemote,
+		},
+		{
+			RepositoryPath: "/repos/github.com/acme/feature",
+			CurrentBranch:  "feature/login",
+			DefaultBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+		},
+	}
+
+	got, err := statusformatter.Format(cloneRoot, results, statusformatter.Options{})
+	if err != nil {
+		t.Fatalf("Format returned error: %v", err)
+	}
+
+	feature := "github.com/acme/feature"
+	current := "github.com/acme/current"
+	noRemote := "github.com/acme/no-remote"
+	unknown := "github.com/acme/unknown"
+
+	if strings.Index(got, feature) > strings.Index(got, current) {
+		t.Fatalf("Format() = %q, want non-default row above healthy default row", got)
+	}
+	if strings.Index(got, current) > strings.Index(got, noRemote) {
+		t.Fatalf("Format() = %q, want healthy default row above incomplete rows", got)
+	}
+	if strings.Index(got, noRemote) > strings.Index(got, unknown) {
+		t.Fatalf("Format() = %q, want incomplete rows sorted alphabetically", got)
+	}
+	if strings.Contains(got, "[!]") {
+		t.Fatalf("Format() = %q, did not want non-default badge for unknown default branch", got)
+	}
+}
+
+func TestFormatShowsFilterAwareEmptyNonDefaultMessage(t *testing.T) {
+	got, err := statusformatter.Format("/repos", nil, statusformatter.Options{
+		NonDefaultOnly:       true,
+		TotalRepositoryCount: 42,
+	})
+	if err != nil {
+		t.Fatalf("Format returned error: %v", err)
+	}
+
+	want := "" +
+		"Repos under /repos:\n" +
+		"No repositories on non-default branches.\n" +
+		"42 repositories, 0 non-default.\n"
+	if got != want {
+		t.Fatalf("Format() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatLeavesFullyEmptyCloneRootUnchangedForNonDefaultFilter(t *testing.T) {
+	got, err := statusformatter.Format("/repos", nil, statusformatter.Options{
+		NonDefaultOnly: true,
+	})
+	if err != nil {
+		t.Fatalf("Format returned error: %v", err)
+	}
+
+	want := "" +
+		"Repos under /repos:\n" +
+		"0 repos — 0 current, 0 behind, 0 non-default-branch\n"
+	if got != want {
+		t.Fatalf("Format() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatDropsPullTipButKeepsNonDefaultTipForPopulatedStatus(t *testing.T) {
+	cloneRoot := "/repos"
+	results := []statuscollector.Result{
+		{
+			RepositoryPath: "/repos/github.com/acme/current",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+		},
+	}
+
+	got, err := statusformatter.Format(cloneRoot, results, statusformatter.Options{})
+	if err != nil {
+		t.Fatalf("Format returned error: %v", err)
+	}
+
+	if strings.Contains(got, "gcm pull") {
+		t.Fatalf("Format() = %q, did not want gcm pull tip", got)
+	}
+	if !strings.Contains(got, "Tips: gcm status --non-default") {
+		t.Fatalf("Format() = %q, want non-default tip", got)
 	}
 }
 

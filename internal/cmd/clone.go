@@ -43,36 +43,44 @@ func newCloneCommand() *cobra.Command {
 			}
 
 			destinationPath := parts.DerivedPath(cloneRoot)
-			if _, err := fmt.Fprintln(command.OutOrStdout(), "Cloning to "+destinationPath+"..."); err != nil {
-				return err
-			}
-
 			if err := ensureCloneRoot(command.ErrOrStderr(), cloneRoot); err != nil {
 				return err
 			}
 
-			state, err := inspectDestination(destinationPath)
+			runner := newGitRunner()
+			state, err := inspectDestination(destinationPath, args[0], runner)
 			if err != nil {
 				return err
 			}
 
 			switch state {
 			case destinationAlreadyCloned:
-				_, err := fmt.Fprintln(command.OutOrStdout(), "Already cloned at "+destinationPath)
+				_, err := fmt.Fprintln(command.OutOrStdout(), destinationPath)
 				return err
 			case destinationBlocked:
 				return fmt.Errorf("cannot clone to %s: destination exists but is not a git repository. Move or remove it first, then run gcm clone again", destinationPath)
 			}
 
-			if err := os.MkdirAll(filepath.Dir(destinationPath), 0o755); err != nil {
+			preExistingDestination := state == destinationReadyPreExisting
+			createdDirs, err := mkdirAllTracked(filepath.Dir(destinationPath), 0o755)
+			if err != nil {
 				return fmt.Errorf("create parent directories for %q: %w", destinationPath, err)
 			}
 
-			if err := newGitRunner().Clone(args[0], destinationPath); err != nil {
+			if _, err := fmt.Fprintln(command.ErrOrStderr(), "Cloning to "+destinationPath+"..."); err != nil {
 				return err
 			}
 
-			_, err = fmt.Fprintln(command.OutOrStdout(), "Done.")
+			if err := runner.Clone(args[0], destinationPath); err != nil {
+				cleanupPartialClone(destinationPath, preExistingDestination, createdDirs)
+				return err
+			}
+
+			if _, err := fmt.Fprintln(command.ErrOrStderr(), "Done."); err != nil {
+				return err
+			}
+
+			_, err = fmt.Fprintln(command.OutOrStdout(), destinationPath)
 			return err
 		},
 	}
@@ -84,6 +92,7 @@ type destinationState int
 
 const (
 	destinationReady destinationState = iota
+	destinationReadyPreExisting
 	destinationAlreadyCloned
 	destinationBlocked
 )
@@ -127,7 +136,7 @@ func ensureCloneRoot(stderr io.Writer, cloneRoot string) error {
 	return nil
 }
 
-func inspectDestination(destinationPath string) (destinationState, error) {
+func inspectDestination(destinationPath string, requestedURL string, runner gitrunner.Runner) (destinationState, error) {
 	info, err := os.Stat(destinationPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return destinationReady, nil
@@ -142,11 +151,61 @@ func inspectDestination(destinationPath string) (destinationState, error) {
 
 	gitDirInfo, err := os.Stat(filepath.Join(destinationPath, ".git"))
 	if err == nil && gitDirInfo.IsDir() {
+		originURL, err := runner.OriginURL(destinationPath)
+		if err != nil {
+			return destinationReady, fmt.Errorf("inspect destination origin %q: %w", destinationPath, err)
+		}
+		if originURL != requestedURL {
+			return destinationReady, fmt.Errorf("cannot clone to %s: existing git repository has origin %q, not requested URL %q", destinationPath, originURL, requestedURL)
+		}
 		return destinationAlreadyCloned, nil
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return destinationReady, fmt.Errorf("inspect destination %q: %w", destinationPath, err)
 	}
 
+	entries, err := os.ReadDir(destinationPath)
+	if err != nil {
+		return destinationReady, fmt.Errorf("inspect destination %q: %w", destinationPath, err)
+	}
+	if len(entries) == 0 {
+		return destinationReadyPreExisting, nil
+	}
+
 	return destinationBlocked, nil
+}
+
+func mkdirAllTracked(path string, perm os.FileMode) ([]string, error) {
+	var missing []string
+	for current := path; current != "." && current != string(filepath.Separator); current = filepath.Dir(current) {
+		if _, err := os.Stat(current); err == nil {
+			break
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		missing = append(missing, current)
+	}
+
+	if err := os.MkdirAll(path, perm); err != nil {
+		return nil, err
+	}
+
+	return missing, nil
+}
+
+func cleanupPartialClone(destinationPath string, preExistingDestination bool, createdDirs []string) {
+	if preExistingDestination {
+		entries, err := os.ReadDir(destinationPath)
+		if err == nil {
+			for _, entry := range entries {
+				_ = os.RemoveAll(filepath.Join(destinationPath, entry.Name()))
+			}
+		}
+	} else {
+		_ = os.RemoveAll(destinationPath)
+	}
+
+	for _, dir := range createdDirs {
+		_ = os.Remove(dir)
+	}
 }
