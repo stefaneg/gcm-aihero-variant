@@ -9,9 +9,10 @@ import (
 type ErrorState string
 
 const (
-	ErrorStateNone        ErrorState = ""
-	ErrorStateFetchFailed ErrorState = "fetch-failed"
-	ErrorStateNoRemote    ErrorState = "no-remote"
+	ErrorStateNone           ErrorState = ""
+	ErrorStateFetchFailed    ErrorState = "fetch-failed"
+	ErrorStateNoRemote       ErrorState = "no-remote"
+	ErrorStateDefaultUnknown ErrorState = "default-unknown"
 )
 
 type Result struct {
@@ -59,7 +60,9 @@ func (collector *Collector) Collect(repositoryPath string, noFetch bool) (Result
 		var noRemoteErr *gitrunner.NoRemoteError
 		switch {
 		case errors.As(err, &originHeadErr):
-			defaultBranch = "main"
+			if result.ErrorState != ErrorStateNoRemote {
+				result.ErrorState = ErrorStateDefaultUnknown
+			}
 		case errors.As(err, &noRemoteErr):
 			result.ErrorState = ErrorStateNoRemote
 			defaultBranch = "main"
@@ -69,7 +72,7 @@ func (collector *Collector) Collect(repositoryPath string, noFetch bool) (Result
 	}
 	result.DefaultBranch = defaultBranch
 
-	if result.ErrorState == ErrorStateNoRemote {
+	if result.ErrorState == ErrorStateNoRemote || result.ErrorState == ErrorStateDefaultUnknown {
 		dirtyCount, err := collector.runner.DirtyCount(repositoryPath)
 		if err != nil {
 			return Result{}, err

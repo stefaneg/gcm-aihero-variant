@@ -85,10 +85,9 @@ func TestCollectReturnsCheckedOutNonDefaultBranch(t *testing.T) {
 	}
 }
 
-func TestCollectFallsBackToMainWhenOriginHeadIsUnset(t *testing.T) {
+func TestCollectReportsDefaultBranchUnknownWhenOriginHeadIsUnset(t *testing.T) {
 	fakeRunner := gitrunnertest.New()
 	fakeRunner.SetCurrentBranch("main")
-	fakeRunner.SetCommitsBehind(0)
 	fakeRunner.SetDirtyCount(0)
 	fakeRunner.StubDefaultBranch(func(repoPath string) (string, error) {
 		return "", &gitrunner.OriginHEADNotSetError{
@@ -104,8 +103,16 @@ func TestCollectFallsBackToMainWhenOriginHeadIsUnset(t *testing.T) {
 		t.Fatalf("Collect returned error: %v", err)
 	}
 
-	if result.DefaultBranch != "main" {
-		t.Fatalf("DefaultBranch = %q, want %q", result.DefaultBranch, "main")
+	if result.DefaultBranch != "" {
+		t.Fatalf("DefaultBranch = %q, want empty", result.DefaultBranch)
+	}
+
+	if result.ErrorState != statuscollector.ErrorStateDefaultUnknown {
+		t.Fatalf("ErrorState = %q, want %q", result.ErrorState, statuscollector.ErrorStateDefaultUnknown)
+	}
+
+	if got := fakeRunner.CommitsBehindCalls(); len(got) != 0 {
+		t.Fatalf("CommitsBehindCalls = %#v, want no commits-behind lookup", got)
 	}
 }
 

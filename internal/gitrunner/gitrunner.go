@@ -145,11 +145,7 @@ func (gitRunner *runner) CurrentBranch(repoPath string) (string, error) {
 func (gitRunner *runner) CommitsBehind(repoPath string) (int, error) {
 	defaultBranch, err := gitRunner.DefaultBranch(repoPath)
 	if err != nil {
-		var originHeadErr *OriginHEADNotSetError
-		if !errors.As(err, &originHeadErr) {
-			return 0, err
-		}
-		defaultBranch = "main"
+		return 0, err
 	}
 
 	output, err := gitRunner.run(

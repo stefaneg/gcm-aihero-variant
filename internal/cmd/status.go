@@ -50,7 +50,7 @@ func newStatusCommand() *cobra.Command {
 			results := make([]statuscollector.Result, 0, len(collected))
 			fetchFailed := false
 			for _, result := range collected {
-				if nonDefaultOnly && result.CurrentBranch == result.DefaultBranch {
+				if nonDefaultOnly && !statusResultIsNonDefault(result) {
 					if result.ErrorState == statuscollector.ErrorStateFetchFailed {
 						fetchFailed = true
 					}
@@ -87,6 +87,16 @@ func newStatusCommand() *cobra.Command {
 	command.Flags().Bool("non-default", false, "Show only repositories on non-default branches")
 
 	return command
+}
+
+func statusResultIsNonDefault(result statuscollector.Result) bool {
+	if result.ErrorState == statuscollector.ErrorStateNoRemote || result.ErrorState == statuscollector.ErrorStateDefaultUnknown {
+		return false
+	}
+	if result.DefaultBranch == "" {
+		return false
+	}
+	return result.CurrentBranch != result.DefaultBranch
 }
 
 func writerIsTTY(writer io.Writer) bool {

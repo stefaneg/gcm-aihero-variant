@@ -95,6 +95,13 @@ func TestFormatShowsErrorBadgesAndExcludesThemFromBehindAndCurrentCounts(t *test
 			ErrorState:     statuscollector.ErrorStateNoRemote,
 		},
 		{
+			RepositoryPath: "/repos/github.com/acme/default-unknown",
+			CurrentBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+			ErrorState:     statuscollector.ErrorStateDefaultUnknown,
+		},
+		{
 			RepositoryPath: "/repos/github.com/acme/current",
 			CurrentBranch:  "main",
 			DefaultBranch:  "main",
@@ -124,8 +131,70 @@ func TestFormatShowsErrorBadgesAndExcludesThemFromBehindAndCurrentCounts(t *test
 		t.Fatalf("Format() = %q, want [no-remote] badge", got)
 	}
 
-	if !strings.Contains(got, "4 repos — 1 current, 0 behind, 1 non-default-branch") {
+	if !strings.Contains(got, "[default-unknown]") {
+		t.Fatalf("Format() = %q, want [default-unknown] badge", got)
+	}
+
+	if !strings.Contains(got, "5 repos — 1 current, 0 behind, 1 non-default-branch") {
 		t.Fatalf("Format() = %q, want error states excluded from current/behind counts", got)
+	}
+}
+
+func TestFormatSortsDefaultUnknownInIncompleteDataTier(t *testing.T) {
+	cloneRoot := "/repos"
+	results := []statuscollector.Result{
+		{
+			RepositoryPath: "/repos/github.com/acme/unknown",
+			CurrentBranch:  "feature/unknown",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+			ErrorState:     statuscollector.ErrorStateDefaultUnknown,
+		},
+		{
+			RepositoryPath: "/repos/github.com/acme/current",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+		},
+		{
+			RepositoryPath: "/repos/github.com/acme/no-remote",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+			ErrorState:     statuscollector.ErrorStateNoRemote,
+		},
+		{
+			RepositoryPath: "/repos/github.com/acme/feature",
+			CurrentBranch:  "feature/login",
+			DefaultBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+		},
+	}
+
+	got, err := statusformatter.Format(cloneRoot, results, statusformatter.Options{})
+	if err != nil {
+		t.Fatalf("Format returned error: %v", err)
+	}
+
+	feature := "github.com/acme/feature"
+	current := "github.com/acme/current"
+	noRemote := "github.com/acme/no-remote"
+	unknown := "github.com/acme/unknown"
+
+	if strings.Index(got, feature) > strings.Index(got, current) {
+		t.Fatalf("Format() = %q, want non-default row above healthy default row", got)
+	}
+	if strings.Index(got, current) > strings.Index(got, noRemote) {
+		t.Fatalf("Format() = %q, want healthy default row above incomplete rows", got)
+	}
+	if strings.Index(got, noRemote) > strings.Index(got, unknown) {
+		t.Fatalf("Format() = %q, want incomplete rows sorted alphabetically", got)
+	}
+	if strings.Contains(got, "[!]") {
+		t.Fatalf("Format() = %q, did not want non-default badge for unknown default branch", got)
 	}
 }
 

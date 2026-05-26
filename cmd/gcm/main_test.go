@@ -466,6 +466,37 @@ func TestStatusShowsNoRemoteRepositoriesWithoutFailing(t *testing.T) {
 	}
 }
 
+func TestStatusShowsDefaultUnknownWhenOriginHeadIsUnset(t *testing.T) {
+	binary := buildGCM(t)
+	cloneRoot := filepath.Join(t.TempDir(), "src")
+	configPath := writeConfigFile(t, "clone_root: "+cloneRoot+"\n")
+
+	remotePath := createBareRemote(t)
+	repoPath := filepath.Join(cloneRoot, "github.com", "acme", "unknown-default")
+	cloneRemoteTo(t, remotePath, repoPath)
+	runGit(t, repoPath, "remote", "set-head", "origin", "--delete")
+
+	command := exec.Command(binary, "status", "--no-fetch")
+	command.Env = append(os.Environ(), "GCM_CONFIG="+configPath)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gcm status failed: %v\n%s", err, output)
+	}
+
+	status := string(output)
+	if !strings.Contains(status, "[default-unknown]") {
+		t.Fatalf("gcm status output = %q, want default-unknown marker", status)
+	}
+
+	if strings.Contains(status, "[!main]") {
+		t.Fatalf("gcm status output = %q, did not want fallback main non-default marker", status)
+	}
+
+	if !strings.Contains(status, "1 repos — 0 current, 0 behind, 0 non-default-branch") {
+		t.Fatalf("gcm status output = %q, want default-unknown repository excluded from summary counts", status)
+	}
+}
+
 func TestStatusCompletesWithinTenSecondsForTwoHundredRepositories(t *testing.T) {
 	binary := buildGCM(t)
 	cloneRoot := filepath.Join(t.TempDir(), "src")
