@@ -92,10 +92,11 @@ end
   if [ "$1" = "clone" ]; then
     local dest
     dest=$(command gcm "$@")
-    if [ $status -eq 0 ] && [ -n "$dest" ]; then
+    local command_status=$?
+    if [ $command_status -eq 0 ] && [ -n "$dest" ]; then
       cd "$dest"
     fi
-    return $status
+    return $command_status
   else
     command gcm "$@"
   fi

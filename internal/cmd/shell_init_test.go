@@ -68,6 +68,14 @@ func TestShellInitDetectsShellFromEnvironment(t *testing.T) {
 	if !strings.Contains(stdout.String(), "gcm() {") {
 		t.Fatalf("stdout = %q, want zsh wrapper", stdout.String())
 	}
+
+	if strings.Contains(stdout.String(), "$status") {
+		t.Fatalf("stdout = %q, did not expect reserved zsh status variable usage", stdout.String())
+	}
+
+	if !strings.Contains(stdout.String(), "local command_status=$?") {
+		t.Fatalf("stdout = %q, want explicit command status capture", stdout.String())
+	}
 }
 
 func TestShellInitRejectsUnsupportedShell(t *testing.T) {
