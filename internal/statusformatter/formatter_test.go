@@ -140,6 +140,138 @@ func TestFormatShowsErrorBadgesAndExcludesThemFromBehindAndCurrentCounts(t *test
 	}
 }
 
+func TestFormatRightAlignsMixedBehindWidths(t *testing.T) {
+	cloneRoot := "/repos"
+	results := []statuscollector.Result{
+		{
+			RepositoryPath: "/repos/github.com/acme/current",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+		},
+		{
+			RepositoryPath: "/repos/github.com/acme/modest",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  9,
+			DirtyCount:     0,
+		},
+		{
+			RepositoryPath: "/repos/github.com/acme/stale",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  408,
+			DirtyCount:     0,
+		},
+	}
+
+	got, err := statusformatter.Format(cloneRoot, results, statusformatter.Options{})
+	if err != nil {
+		t.Fatalf("Format returned error: %v", err)
+	}
+
+	want := "" +
+		"Repos under /repos:\n" +
+		"github.com/acme/stale    main    behind=408  dirty=0  [behind]\n" +
+		"github.com/acme/modest   main    behind=  9  dirty=0  [behind]\n" +
+		"github.com/acme/current  main    behind=  0  dirty=0\n" +
+		"3 repos — 1 current, 2 behind, 0 non-default-branch\n" +
+		"Tips: gcm status --non-default\n"
+
+	if got != want {
+		t.Fatalf("Format() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatRightAlignsMixedDirtyWidths(t *testing.T) {
+	cloneRoot := "/repos"
+	results := []statuscollector.Result{
+		{
+			RepositoryPath: "/repos/github.com/acme/clean",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     0,
+		},
+		{
+			RepositoryPath: "/repos/github.com/acme/touched",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     7,
+		},
+		{
+			RepositoryPath: "/repos/github.com/acme/messy",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     42,
+		},
+	}
+
+	got, err := statusformatter.Format(cloneRoot, results, statusformatter.Options{})
+	if err != nil {
+		t.Fatalf("Format returned error: %v", err)
+	}
+
+	want := "" +
+		"Repos under /repos:\n" +
+		"github.com/acme/clean    main    behind=0  dirty= 0\n" +
+		"github.com/acme/messy    main    behind=0  dirty=42\n" +
+		"github.com/acme/touched  main    behind=0  dirty= 7\n" +
+		"3 repos — 3 current, 0 behind, 0 non-default-branch\n" +
+		"Tips: gcm status --non-default\n"
+
+	if got != want {
+		t.Fatalf("Format() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatRightAlignsBehindAndDirtyWhenBothAreMultiDigit(t *testing.T) {
+	cloneRoot := "/repos"
+	results := []statuscollector.Result{
+		{
+			RepositoryPath: "/repos/github.com/acme/current",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  0,
+			DirtyCount:     1,
+		},
+		{
+			RepositoryPath: "/repos/github.com/acme/feature",
+			CurrentBranch:  "feature/work",
+			DefaultBranch:  "main",
+			CommitsBehind:  12,
+			DirtyCount:     5,
+		},
+		{
+			RepositoryPath: "/repos/github.com/acme/heavy",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  123,
+			DirtyCount:     88,
+		},
+	}
+
+	got, err := statusformatter.Format(cloneRoot, results, statusformatter.Options{})
+	if err != nil {
+		t.Fatalf("Format returned error: %v", err)
+	}
+
+	want := "" +
+		"Repos under /repos:\n" +
+		"github.com/acme/feature  feature/work  behind= 12  dirty= 5  [behind] [!main]\n" +
+		"github.com/acme/heavy    main          behind=123  dirty=88  [behind]\n" +
+		"github.com/acme/current  main          behind=  0  dirty= 1\n" +
+		"3 repos — 1 current, 1 behind, 1 non-default-branch\n" +
+		"Tips: gcm status --non-default\n"
+
+	if got != want {
+		t.Fatalf("Format() = %q, want %q", got, want)
+	}
+}
+
 func TestFormatSortsDefaultUnknownInIncompleteDataTier(t *testing.T) {
 	cloneRoot := "/repos"
 	results := []statuscollector.Result{

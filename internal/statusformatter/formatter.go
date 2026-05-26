@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"git-clone-manager/internal/statuscollector"
@@ -39,12 +40,20 @@ func Format(cloneRoot string, results []statuscollector.Result, options Options)
 
 	pathWidth := len("path")
 	branchWidth := len("branch")
+	behindWidth := 1
+	dirtyWidth := 1
 	for _, row := range rows {
 		if len(row.relativePath) > pathWidth {
 			pathWidth = len(row.relativePath)
 		}
 		if len(row.result.CurrentBranch) > branchWidth {
 			branchWidth = len(row.result.CurrentBranch)
+		}
+		if digitWidth(row.result.CommitsBehind) > behindWidth {
+			behindWidth = digitWidth(row.result.CommitsBehind)
+		}
+		if digitWidth(row.result.DirtyCount) > dirtyWidth {
+			dirtyWidth = digitWidth(row.result.DirtyCount)
 		}
 	}
 
@@ -64,12 +73,14 @@ func Format(cloneRoot string, results []statuscollector.Result, options Options)
 		for _, row := range rows {
 			badges := formatBadges(row.result, options)
 			builder.WriteString(fmt.Sprintf(
-				"%-*s  %-*s  behind=%d  dirty=%d",
+				"%-*s  %-*s  behind=%*d  dirty=%*d",
 				pathWidth,
 				row.relativePath,
 				branchWidth,
 				row.result.CurrentBranch,
+				behindWidth,
 				row.result.CommitsBehind,
+				dirtyWidth,
 				row.result.DirtyCount,
 			))
 			if badges != "" {
@@ -97,6 +108,10 @@ func Format(cloneRoot string, results []statuscollector.Result, options Options)
 	}
 
 	return builder.String(), nil
+}
+
+func digitWidth(value int) int {
+	return len(strconv.Itoa(value))
 }
 
 func sortRows(rows []formattedRow) {

@@ -101,6 +101,43 @@ func TestStatusNonDefaultFiltersTable(t *testing.T) {
 	}
 }
 
+func TestStatusNonDefaultFormatsWidthsFromFilteredRows(t *testing.T) {
+	cloneRoot := "/repos"
+	collector := &fakeStatusCollector{results: []statuscollector.Result{
+		{
+			RepositoryPath: "/repos/github.com/acme/default-stale",
+			CurrentBranch:  "main",
+			DefaultBranch:  "main",
+			CommitsBehind:  408,
+			DirtyCount:     77,
+		},
+		{
+			RepositoryPath: "/repos/github.com/acme/feature",
+			CurrentBranch:  "feature/login",
+			DefaultBranch:  "main",
+			CommitsBehind:  9,
+			DirtyCount:     1,
+		},
+	}}
+	withStatusCommandFakes(t, cloneRoot, collector)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Execute([]string{"status", "--non-default"}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
+	}
+
+	status := stdout.String()
+	if !strings.Contains(status, "github.com/acme/feature  feature/login  behind=9  dirty=1  [behind] [!main]") {
+		t.Fatalf("status output = %q, want filtered row without excluded-row numeric padding", status)
+	}
+	if strings.Contains(status, "behind=  9") || strings.Contains(status, "dirty= 1") {
+		t.Fatalf("status output = %q, did not want numeric widths from filtered-out row", status)
+	}
+}
+
 func TestStatusNonDefaultShowsFilterAwareEmptyMessage(t *testing.T) {
 	cloneRoot := "/repos"
 	collector := &fakeStatusCollector{results: []statuscollector.Result{
