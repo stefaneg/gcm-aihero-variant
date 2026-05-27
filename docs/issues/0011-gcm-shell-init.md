@@ -1,6 +1,6 @@
 # 0011 — `gcm shell-init` shell-function wrapper
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

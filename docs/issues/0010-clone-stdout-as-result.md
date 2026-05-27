@@ -1,6 +1,6 @@
 # 0010 — `gcm clone` adopts stdout-as-result contract
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

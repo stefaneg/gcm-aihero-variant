@@ -1,6 +1,6 @@
 # 0017 — Status table: pad `behind=` and `dirty=` to max width across rows
 
-Status: ready-for-agent
+Status: DONE
 
 ## What to build
 

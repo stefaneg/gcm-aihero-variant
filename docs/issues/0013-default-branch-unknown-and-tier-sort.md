@@ -1,6 +1,6 @@
 # 0013 — Default branch unknown handling, `[default-unknown]` badge, three-tier sort
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

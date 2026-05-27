@@ -1,6 +1,6 @@
 # 0012 — `gcm clone` hardening: origin-mismatch, empty-dir, partial-cleanup
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

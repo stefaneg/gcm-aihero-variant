@@ -1,6 +1,6 @@
 # 0014 — Filter-aware empty `--non-default`; drop `gcm pull` tip
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 
