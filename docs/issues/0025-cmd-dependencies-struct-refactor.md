@@ -1,6 +1,6 @@
 # 0025 — internal/cmd: replace mutable package-level test seams with a `Dependencies` struct
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

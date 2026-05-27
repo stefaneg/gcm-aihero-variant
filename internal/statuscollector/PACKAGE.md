@@ -37,7 +37,7 @@ This package is the canonical home for turning git runner facts into one reposit
 
 - Network fetch failures become `ErrorStateFetchFailed`; no-remote failures become `ErrorStateNoRemote`.
 - Unexpected git errors abort collection by returning an error.
-- When `origin/HEAD` is unset or no remote exists, the default branch falls back to `main`.
+- When `origin/HEAD` is unset or no remote exists, the default branch is left empty and surfaced through an error state.
 - No-remote repositories skip behind-count calculation but still report dirty count.
 - The collector is safe to use concurrently if the injected runner is safe.
 

@@ -1,14 +1,19 @@
 package gitrunner
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type gitCall struct {
+	ctx       context.Context
 	gitBinary string
 	repoPath  string
 	args      []string
@@ -18,8 +23,9 @@ func newFakeRunner(fn func(repoPath string, args ...string) (string, error)) (*r
 	var calls []gitCall
 	return &runner{
 		gitBinary: "git-test",
-		runCommand: func(gitBinary, repoPath string, args ...string) (string, error) {
+		runCommand: func(ctx context.Context, gitBinary, repoPath string, args ...string) (string, error) {
 			calls = append(calls, gitCall{
+				ctx:       ctx,
 				gitBinary: gitBinary,
 				repoPath:  repoPath,
 				args:      append([]string(nil), args...),
@@ -30,11 +36,12 @@ func newFakeRunner(fn func(repoPath string, args ...string) (string, error)) (*r
 }
 
 func TestCloneRunsGitCloneIntoDestination(t *testing.T) {
+	ctx := context.Background()
 	runner, calls := newFakeRunner(func(repoPath string, args ...string) (string, error) {
 		return "", nil
 	})
 
-	if err := runner.Clone("https://example.com/repo.git", "/repos/example"); err != nil {
+	if err := runner.Clone(ctx, "https://example.com/repo.git", "/repos/example"); err != nil {
 		t.Fatalf("Clone returned error: %v", err)
 	}
 
@@ -45,11 +52,12 @@ func TestCloneRunsGitCloneIntoDestination(t *testing.T) {
 }
 
 func TestFetchRunsGitFetchOriginInRepository(t *testing.T) {
+	ctx := context.Background()
 	runner, calls := newFakeRunner(func(repoPath string, args ...string) (string, error) {
 		return "", nil
 	})
 
-	if err := runner.Fetch("/repos/example"); err != nil {
+	if err := runner.Fetch(ctx, "/repos/example"); err != nil {
 		t.Fatalf("Fetch returned error: %v", err)
 	}
 
@@ -65,7 +73,7 @@ func TestDirtyCountCountsPorcelainRows(t *testing.T) {
 		return " M README.md\n?? notes.txt\n\n", nil
 	})
 
-	dirtyCount, err := runner.DirtyCount("/repos/example")
+	dirtyCount, err := runner.DirtyCount(context.Background(), "/repos/example")
 	if err != nil {
 		t.Fatalf("DirtyCount returned error: %v", err)
 	}
@@ -80,7 +88,7 @@ func TestCurrentBranchReturnsCheckedOutBranchName(t *testing.T) {
 		return "feature/status\n", nil
 	})
 
-	currentBranch, err := runner.CurrentBranch("/repos/example")
+	currentBranch, err := runner.CurrentBranch(context.Background(), "/repos/example")
 	if err != nil {
 		t.Fatalf("CurrentBranch returned error: %v", err)
 	}
@@ -103,7 +111,7 @@ func TestCommitsBehindCountsBehindRemoteDefaultBranch(t *testing.T) {
 		}
 	})
 
-	commitsBehind, err := runner.CommitsBehind("/repos/example")
+	commitsBehind, err := runner.CommitsBehind(context.Background(), "/repos/example")
 	if err != nil {
 		t.Fatalf("CommitsBehind returned error: %v", err)
 	}
@@ -124,7 +132,7 @@ func TestCommitsBehindReturnsErrorWhenOriginHEADIsUnset(t *testing.T) {
 		}
 	})
 
-	_, err := runner.CommitsBehind("/repos/example")
+	_, err := runner.CommitsBehind(context.Background(), "/repos/example")
 	if err == nil {
 		t.Fatal("CommitsBehind unexpectedly succeeded")
 	}
@@ -140,7 +148,7 @@ func TestDefaultBranchReturnsOriginHEADBranchName(t *testing.T) {
 		return "origin/main\n", nil
 	})
 
-	defaultBranch, err := runner.DefaultBranch("/repos/example")
+	defaultBranch, err := runner.DefaultBranch(context.Background(), "/repos/example")
 	if err != nil {
 		t.Fatalf("DefaultBranch returned error: %v", err)
 	}
@@ -155,7 +163,7 @@ func TestDefaultBranchRejectsRefOutsideOrigin(t *testing.T) {
 		return "upstream/main\n", nil
 	})
 
-	_, err := runner.DefaultBranch("/repos/example")
+	_, err := runner.DefaultBranch(context.Background(), "/repos/example")
 	if err == nil {
 		t.Fatal("DefaultBranch unexpectedly succeeded")
 	}
@@ -170,7 +178,7 @@ func TestOriginURLReturnsConfiguredOrigin(t *testing.T) {
 		return "https://example.com/acme/repo.git\n", nil
 	})
 
-	originURL, err := runner.OriginURL("/repos/example")
+	originURL, err := runner.OriginURL(context.Background(), "/repos/example")
 	if err != nil {
 		t.Fatalf("OriginURL returned error: %v", err)
 	}
@@ -248,7 +256,7 @@ func TestCloneReturnsGitNotFoundErrorWhenGitBinaryIsMissing(t *testing.T) {
 		return "", exec.ErrNotFound
 	})
 
-	err := runner.Clone("https://example.com/repo.git", "/repos/example")
+	err := runner.Clone(context.Background(), "https://example.com/repo.git", "/repos/example")
 	if err == nil {
 		t.Fatal("Clone unexpectedly succeeded")
 	}
@@ -272,13 +280,95 @@ func TestCommitsBehindReturnsParseErrorForInvalidCount(t *testing.T) {
 		}
 	})
 
-	_, err := runner.CommitsBehind("/repos/example")
+	_, err := runner.CommitsBehind(context.Background(), "/repos/example")
 	if err == nil {
 		t.Fatal("CommitsBehind unexpectedly succeeded")
 	}
 
 	if !strings.Contains(err.Error(), "parse commits behind count") {
 		t.Fatalf("CommitsBehind error = %v, want parse error", err)
+	}
+}
+
+func TestRunGitCommandForcesCLocale(t *testing.T) {
+	output, err := runGitCommand(
+		context.Background(),
+		os.Args[0],
+		"",
+		"-test.run=TestGitRunnerHelperProcess",
+		"--",
+		"print-env",
+	)
+	if err != nil {
+		t.Fatalf("runGitCommand returned error: %v", err)
+	}
+
+	for _, want := range []string{"LC_ALL=C", "LANG=C"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output = %q, want %q", output, want)
+		}
+	}
+}
+
+func TestRunGitCommandReturnsContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := runGitCommand(
+		ctx,
+		os.Args[0],
+		"",
+		"-test.run=TestGitRunnerHelperProcess",
+		"--",
+		"print-env",
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("runGitCommand error = %v, want context canceled", err)
+	}
+}
+
+func TestClassifiesContextTimeout(t *testing.T) {
+	runner, _ := newFakeRunner(func(repoPath string, args ...string) (string, error) {
+		return "", nil
+	})
+
+	err := runner.classifyError("fetch", "/repos/example", context.DeadlineExceeded)
+	var timeoutErr *TimeoutError
+	if !errors.As(err, &timeoutErr) {
+		t.Fatalf("error type = %T, want *TimeoutError", err)
+	}
+}
+
+func TestFetchReturnsTimeoutErrorWhenContextExpires(t *testing.T) {
+	runner := &runner{
+		gitBinary: "git-test",
+		runCommand: func(ctx context.Context, gitBinary, repoPath string, args ...string) (string, error) {
+			<-ctx.Done()
+			return "", ctx.Err()
+		},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+
+	err := runner.Fetch(ctx, "/repos/example")
+	var timeoutErr *TimeoutError
+	if !errors.As(err, &timeoutErr) {
+		t.Fatalf("Fetch error type = %T, want *TimeoutError", err)
+	}
+}
+
+func TestGitRunnerHelperProcess(t *testing.T) {
+	args := os.Args
+	for index, arg := range args {
+		if arg != "--" || index+1 >= len(args) {
+			continue
+		}
+
+		switch args[index+1] {
+		case "print-env":
+			fmt.Printf("LC_ALL=%s\nLANG=%s\n", os.Getenv("LC_ALL"), os.Getenv("LANG"))
+			os.Exit(0)
+		}
 	}
 }
 

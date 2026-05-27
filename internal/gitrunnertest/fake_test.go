@@ -1,6 +1,7 @@
 package gitrunnertest_test
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -9,6 +10,7 @@ import (
 )
 
 func TestFakeReturnsStubbedValuesAndRecordsCalls(t *testing.T) {
+	ctx := context.Background()
 	fakeRunner := gitrunnertest.New()
 	fakeRunner.SetCurrentBranch("main")
 	fakeRunner.SetDirtyCount(3)
@@ -28,19 +30,19 @@ func TestFakeReturnsStubbedValuesAndRecordsCalls(t *testing.T) {
 		return "", currentBranchErr
 	})
 
-	if err := fakeRunner.Clone("https://example.com/repo.git", "/tmp/repo"); !errors.Is(err, cloneErr) {
+	if err := fakeRunner.Clone(ctx, "https://example.com/repo.git", "/tmp/repo"); !errors.Is(err, cloneErr) {
 		t.Fatalf("Clone error = %v, want %v", err, cloneErr)
 	}
 
-	if err := fakeRunner.Fetch("/tmp/repo"); !errors.Is(err, fetchErr) {
+	if err := fakeRunner.Fetch(ctx, "/tmp/repo"); !errors.Is(err, fetchErr) {
 		t.Fatalf("Fetch error = %v, want %v", err, fetchErr)
 	}
 
-	if _, err := fakeRunner.CurrentBranch("/tmp/repo"); !errors.Is(err, currentBranchErr) {
+	if _, err := fakeRunner.CurrentBranch(ctx, "/tmp/repo"); !errors.Is(err, currentBranchErr) {
 		t.Fatalf("CurrentBranch error = %v, want %v", err, currentBranchErr)
 	}
 
-	dirtyCount, err := fakeRunner.DirtyCount("/tmp/repo")
+	dirtyCount, err := fakeRunner.DirtyCount(ctx, "/tmp/repo")
 	if err != nil {
 		t.Fatalf("DirtyCount returned error: %v", err)
 	}
@@ -49,7 +51,7 @@ func TestFakeReturnsStubbedValuesAndRecordsCalls(t *testing.T) {
 		t.Fatalf("DirtyCount = %d, want %d", dirtyCount, 3)
 	}
 
-	commitsBehind, err := fakeRunner.CommitsBehind("/tmp/repo")
+	commitsBehind, err := fakeRunner.CommitsBehind(ctx, "/tmp/repo")
 	if err != nil {
 		t.Fatalf("CommitsBehind returned error: %v", err)
 	}
@@ -58,7 +60,7 @@ func TestFakeReturnsStubbedValuesAndRecordsCalls(t *testing.T) {
 		t.Fatalf("CommitsBehind = %d, want %d", commitsBehind, 2)
 	}
 
-	defaultBranch, err := fakeRunner.DefaultBranch("/tmp/repo")
+	defaultBranch, err := fakeRunner.DefaultBranch(ctx, "/tmp/repo")
 	if err != nil {
 		t.Fatalf("DefaultBranch returned error: %v", err)
 	}
@@ -93,6 +95,7 @@ func TestFakeReturnsStubbedValuesAndRecordsCalls(t *testing.T) {
 }
 
 func TestFakeSupportsConcurrentUse(t *testing.T) {
+	ctx := context.Background()
 	fakeRunner := gitrunnertest.New()
 	fakeRunner.SetDirtyCount(1)
 
@@ -102,7 +105,7 @@ func TestFakeSupportsConcurrentUse(t *testing.T) {
 		go func() {
 			defer waitGroup.Done()
 
-			if _, err := fakeRunner.DirtyCount("/tmp/repo"); err != nil {
+			if _, err := fakeRunner.DirtyCount(ctx, "/tmp/repo"); err != nil {
 				t.Errorf("DirtyCount returned error: %v", err)
 			}
 		}()

@@ -1,6 +1,6 @@
 # 0019 — statuspipeline: partial results on hard error; actionable error when clone root missing
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

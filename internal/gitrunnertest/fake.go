@@ -1,6 +1,7 @@
 package gitrunnertest
 
 import (
+	"context"
 	"sync"
 
 	"git-clone-manager/internal/gitrunner"
@@ -127,7 +128,7 @@ func (fakeRunner *Fake) SetDefaultBranch(branch string) {
 	fakeRunner.defaultBranchValue = branch
 }
 
-func (fakeRunner *Fake) Clone(url, destPath string) error {
+func (fakeRunner *Fake) Clone(ctx context.Context, url, destPath string) error {
 	fakeRunner.mu.Lock()
 	fakeRunner.cloneCalls = append(fakeRunner.cloneCalls, CloneCall{URL: url, DestPath: destPath})
 	cloneFunc := fakeRunner.cloneFunc
@@ -140,7 +141,7 @@ func (fakeRunner *Fake) Clone(url, destPath string) error {
 	return nil
 }
 
-func (fakeRunner *Fake) OriginURL(repoPath string) (string, error) {
+func (fakeRunner *Fake) OriginURL(ctx context.Context, repoPath string) (string, error) {
 	fakeRunner.mu.Lock()
 	fakeRunner.originURLCalls = append(fakeRunner.originURLCalls, repoPath)
 	originURLFunc := fakeRunner.originURLFunc
@@ -154,7 +155,7 @@ func (fakeRunner *Fake) OriginURL(repoPath string) (string, error) {
 	return originURLValue, nil
 }
 
-func (fakeRunner *Fake) Fetch(repoPath string) error {
+func (fakeRunner *Fake) Fetch(ctx context.Context, repoPath string) error {
 	fakeRunner.mu.Lock()
 	fakeRunner.fetchCalls = append(fakeRunner.fetchCalls, repoPath)
 	fetchFunc := fakeRunner.fetchFunc
@@ -167,7 +168,7 @@ func (fakeRunner *Fake) Fetch(repoPath string) error {
 	return nil
 }
 
-func (fakeRunner *Fake) CurrentBranch(repoPath string) (string, error) {
+func (fakeRunner *Fake) CurrentBranch(ctx context.Context, repoPath string) (string, error) {
 	fakeRunner.mu.Lock()
 	fakeRunner.currentBranchCalls = append(fakeRunner.currentBranchCalls, repoPath)
 	currentBranchFunc := fakeRunner.currentBranchFunc
@@ -181,7 +182,7 @@ func (fakeRunner *Fake) CurrentBranch(repoPath string) (string, error) {
 	return currentBranchValue, nil
 }
 
-func (fakeRunner *Fake) DirtyCount(repoPath string) (int, error) {
+func (fakeRunner *Fake) DirtyCount(ctx context.Context, repoPath string) (int, error) {
 	fakeRunner.mu.Lock()
 	fakeRunner.dirtyCountCalls = append(fakeRunner.dirtyCountCalls, repoPath)
 	dirtyCountFunc := fakeRunner.dirtyCountFunc
@@ -195,7 +196,7 @@ func (fakeRunner *Fake) DirtyCount(repoPath string) (int, error) {
 	return dirtyCountValue, nil
 }
 
-func (fakeRunner *Fake) CommitsBehind(repoPath string) (int, error) {
+func (fakeRunner *Fake) CommitsBehind(ctx context.Context, repoPath string) (int, error) {
 	fakeRunner.mu.Lock()
 	fakeRunner.commitsBehindCalls = append(fakeRunner.commitsBehindCalls, repoPath)
 	commitsBehindFunc := fakeRunner.commitsBehindFunc
@@ -209,7 +210,7 @@ func (fakeRunner *Fake) CommitsBehind(repoPath string) (int, error) {
 	return commitsBehindValue, nil
 }
 
-func (fakeRunner *Fake) DefaultBranch(repoPath string) (string, error) {
+func (fakeRunner *Fake) DefaultBranch(ctx context.Context, repoPath string) (string, error) {
 	fakeRunner.mu.Lock()
 	fakeRunner.defaultBranchCalls = append(fakeRunner.defaultBranchCalls, repoPath)
 	defaultBranchFunc := fakeRunner.defaultBranchFunc

@@ -22,6 +22,7 @@ Requirements:
 
 - Go 1.25 or newer
 - Git available on `PATH`
+- Optional: [`fzf`](https://github.com/junegunn/fzf) available on `PATH` for `gcm open`
 
 Build a local binary:
 

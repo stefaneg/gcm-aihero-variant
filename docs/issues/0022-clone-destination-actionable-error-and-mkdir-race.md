@@ -1,6 +1,6 @@
 # 0022 — gcm clone: actionable error for half-broken `.git`; race-free `mkdirAllTracked`
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

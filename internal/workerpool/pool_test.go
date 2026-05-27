@@ -3,6 +3,7 @@ package workerpool_test
 import (
 	"errors"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,6 +60,33 @@ func TestRunPreservesPerItemErrorsWithoutAbortingOtherItems(t *testing.T) {
 
 	if results[2].Value != 30 || results[2].Err != nil {
 		t.Fatalf("results[2] = %#v, want value 30 with nil error", results[2])
+	}
+}
+
+func TestRunConvertsPanicsToPerItemErrorsWithoutAbortingOtherItems(t *testing.T) {
+	items := []string{"one", "panic", "three"}
+
+	results := workerpool.Run(items, func(item string) (string, error) {
+		if item == "panic" {
+			panic("repository exploded")
+		}
+
+		return item + "-done", nil
+	})
+
+	if results[0].Value != "one-done" || results[0].Err != nil {
+		t.Fatalf("results[0] = %#v, want successful result", results[0])
+	}
+	if results[2].Value != "three-done" || results[2].Err != nil {
+		t.Fatalf("results[2] = %#v, want successful result", results[2])
+	}
+	if results[1].Err == nil {
+		t.Fatal("results[1].Err = nil, want panic error")
+	}
+	for _, want := range []string{"worker panic", "repository exploded", "panic"} {
+		if !strings.Contains(results[1].Err.Error(), want) {
+			t.Fatalf("panic error = %q, want %q", results[1].Err.Error(), want)
+		}
 	}
 }
 

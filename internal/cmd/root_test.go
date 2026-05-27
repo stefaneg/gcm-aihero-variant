@@ -76,3 +76,13 @@ func TestUsageErrorsExitWithCode2(t *testing.T) {
 		})
 	}
 }
+
+func TestUnknownCommandExitsWithUsageCode(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Execute([]string{"not-a-command"}, &stdout, &stderr)
+	if exitCode != exitcodes.Usage {
+		t.Fatalf("Execute exit code = %d, want %d\nstdout:\n%s\nstderr:\n%s", exitCode, exitcodes.Usage, stdout.String(), stderr.String())
+	}
+}

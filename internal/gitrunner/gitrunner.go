@@ -2,23 +2,27 @@ package gitrunner
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Runner interface {
-	Clone(url, destPath string) error
-	OriginURL(repoPath string) (string, error)
-	Fetch(repoPath string) error
-	CurrentBranch(repoPath string) (string, error)
-	DirtyCount(repoPath string) (int, error)
-	CommitsBehind(repoPath string) (int, error)
-	DefaultBranch(repoPath string) (string, error)
+	Clone(ctx context.Context, url, destPath string) error
+	OriginURL(ctx context.Context, repoPath string) (string, error)
+	Fetch(ctx context.Context, repoPath string) error
+	CurrentBranch(ctx context.Context, repoPath string) (string, error)
+	DirtyCount(ctx context.Context, repoPath string) (int, error)
+	CommitsBehind(ctx context.Context, repoPath string) (int, error)
+	DefaultBranch(ctx context.Context, repoPath string) (string, error)
 }
+
+const DefaultCommandTimeout = 45 * time.Second
 
 type GitNotFoundError struct {
 	Binary string
@@ -50,6 +54,20 @@ type NetworkError struct {
 	Operation      string
 	RepositoryPath string
 	Err            error
+}
+
+type TimeoutError struct {
+	Operation      string
+	RepositoryPath string
+	Err            error
+}
+
+func (errorWithContext *TimeoutError) Error() string {
+	return fmt.Sprintf("git %s timed out for %q: %v", errorWithContext.Operation, errorWithContext.RepositoryPath, errorWithContext.Err)
+}
+
+func (errorWithContext *TimeoutError) Unwrap() error {
+	return errorWithContext.Err
 }
 
 func (errorWithContext *NetworkError) Error() string {
@@ -88,7 +106,7 @@ func (errorWithContext *OriginHEADNotSetError) Unwrap() error {
 
 type runner struct {
 	gitBinary  string
-	runCommand func(gitBinary, repoPath string, args ...string) (string, error)
+	runCommand func(ctx context.Context, gitBinary, repoPath string, args ...string) (string, error)
 }
 
 func New() Runner {
@@ -99,8 +117,8 @@ func NewForTesting(gitBinary string) Runner {
 	return &runner{gitBinary: gitBinary, runCommand: runGitCommand}
 }
 
-func (gitRunner *runner) Clone(url, destPath string) error {
-	_, err := gitRunner.run("", "clone", url, destPath)
+func (gitRunner *runner) Clone(ctx context.Context, url, destPath string) error {
+	_, err := gitRunner.run(ctx, "", "clone", url, destPath)
 	if err != nil {
 		return gitRunner.classifyError("clone", destPath, err)
 	}
@@ -108,8 +126,8 @@ func (gitRunner *runner) Clone(url, destPath string) error {
 	return nil
 }
 
-func (gitRunner *runner) OriginURL(repoPath string) (string, error) {
-	output, err := gitRunner.run(repoPath, "config", "--get", "remote.origin.url")
+func (gitRunner *runner) OriginURL(ctx context.Context, repoPath string) (string, error) {
+	output, err := gitRunner.run(ctx, repoPath, "config", "--get", "remote.origin.url")
 	if err != nil {
 		return "", gitRunner.classifyError("config", repoPath, err)
 	}
@@ -117,8 +135,8 @@ func (gitRunner *runner) OriginURL(repoPath string) (string, error) {
 	return strings.TrimSpace(output), nil
 }
 
-func (gitRunner *runner) Fetch(repoPath string) error {
-	_, err := gitRunner.run(repoPath, "fetch", "origin")
+func (gitRunner *runner) Fetch(ctx context.Context, repoPath string) error {
+	_, err := gitRunner.run(ctx, repoPath, "fetch", "origin")
 	if err != nil {
 		return gitRunner.classifyError("fetch", repoPath, err)
 	}
@@ -126,8 +144,8 @@ func (gitRunner *runner) Fetch(repoPath string) error {
 	return nil
 }
 
-func (gitRunner *runner) DirtyCount(repoPath string) (int, error) {
-	output, err := gitRunner.run(repoPath, "status", "--porcelain")
+func (gitRunner *runner) DirtyCount(ctx context.Context, repoPath string) (int, error) {
+	output, err := gitRunner.run(ctx, repoPath, "status", "--porcelain")
 	if err != nil {
 		return 0, gitRunner.classifyError("status", repoPath, err)
 	}
@@ -135,8 +153,8 @@ func (gitRunner *runner) DirtyCount(repoPath string) (int, error) {
 	return countNonEmptyLines(output), nil
 }
 
-func (gitRunner *runner) CurrentBranch(repoPath string) (string, error) {
-	output, err := gitRunner.run(repoPath, "branch", "--show-current")
+func (gitRunner *runner) CurrentBranch(ctx context.Context, repoPath string) (string, error) {
+	output, err := gitRunner.run(ctx, repoPath, "branch", "--show-current")
 	if err != nil {
 		return "", gitRunner.classifyError("branch", repoPath, err)
 	}
@@ -144,13 +162,14 @@ func (gitRunner *runner) CurrentBranch(repoPath string) (string, error) {
 	return strings.TrimSpace(output), nil
 }
 
-func (gitRunner *runner) CommitsBehind(repoPath string) (int, error) {
-	defaultBranch, err := gitRunner.DefaultBranch(repoPath)
+func (gitRunner *runner) CommitsBehind(ctx context.Context, repoPath string) (int, error) {
+	defaultBranch, err := gitRunner.DefaultBranch(ctx, repoPath)
 	if err != nil {
 		return 0, err
 	}
 
 	output, err := gitRunner.run(
+		ctx,
 		repoPath,
 		"rev-list",
 		"--count",
@@ -168,8 +187,8 @@ func (gitRunner *runner) CommitsBehind(repoPath string) (int, error) {
 	return commitsBehind, nil
 }
 
-func (gitRunner *runner) DefaultBranch(repoPath string) (string, error) {
-	output, err := gitRunner.run(repoPath, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+func (gitRunner *runner) DefaultBranch(ctx context.Context, repoPath string) (string, error) {
+	output, err := gitRunner.run(ctx, repoPath, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
 	if err != nil {
 		return "", gitRunner.classifyError("symbolic-ref", repoPath, err)
 	}
@@ -182,22 +201,26 @@ func (gitRunner *runner) DefaultBranch(repoPath string) (string, error) {
 	return strings.TrimPrefix(defaultBranchRef, "origin/"), nil
 }
 
-func (gitRunner *runner) run(repoPath string, args ...string) (string, error) {
-	return gitRunner.runCommand(gitRunner.gitBinary, repoPath, args...)
+func (gitRunner *runner) run(ctx context.Context, repoPath string, args ...string) (string, error) {
+	return gitRunner.runCommand(ctx, gitRunner.gitBinary, repoPath, args...)
 }
 
-func runGitCommand(gitBinary string, repoPath string, args ...string) (string, error) {
+func runGitCommand(ctx context.Context, gitBinary string, repoPath string, args ...string) (string, error) {
 	commandArgs := args
 	if repoPath != "" {
 		commandArgs = append([]string{"-C", repoPath}, args...)
 	}
 
-	cmd := exec.Command(gitBinary, commandArgs...)
+	cmd := exec.CommandContext(ctx, gitBinary, commandArgs...)
+	cmd.Env = append(os.Environ(), "LC_ALL=C", "LANG=C")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
 	output, err := cmd.Output()
 	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return "", ctx.Err()
+		}
 		if stderr.Len() > 0 {
 			return "", &commandError{stderr: strings.TrimSpace(stderr.String()), err: err}
 		}
@@ -209,6 +232,10 @@ func runGitCommand(gitBinary string, repoPath string, args ...string) (string, e
 }
 
 func (gitRunner *runner) classifyError(operation, repoPath string, err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return &TimeoutError{Operation: operation, RepositoryPath: repoPath, Err: err}
+	}
+
 	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 		return &GitNotFoundError{Binary: gitRunner.gitBinary, Err: err}
 	}

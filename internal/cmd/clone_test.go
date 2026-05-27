@@ -15,26 +15,13 @@ import (
 
 func TestClonePassesURLToGitAsIs(t *testing.T) {
 	fakeRunner := gitrunnertest.New()
-
-	originalLoadConfig := loadEffectiveCloneConfig
-	originalNewGitRunner := newGitRunner
-	t.Cleanup(func() {
-		loadEffectiveCloneConfig = originalLoadConfig
-		newGitRunner = originalNewGitRunner
-	})
-
-	loadEffectiveCloneConfig = func() (configstore.EffectiveConfig, error) {
-		return configstore.EffectiveConfig{CloneRoot: t.TempDir()}, nil
-	}
-	newGitRunner = func() gitrunner.Runner {
-		return fakeRunner
-	}
+	cloneRoot := t.TempDir()
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
 	rawURL := "custom+git://example.com/deep/group/repo.git"
-	exitCode := Execute([]string{"clone", rawURL}, &stdout, &stderr)
+	exitCode := executeCloneCommand(cloneRoot, fakeRunner, []string{"clone", rawURL}, &stdout, &stderr)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -52,13 +39,6 @@ func TestClonePassesURLToGitAsIs(t *testing.T) {
 func TestCloneRejectsExistingRepositoryWithMismatchedOrigin(t *testing.T) {
 	fakeRunner := gitrunnertest.New()
 
-	originalLoadConfig := loadEffectiveCloneConfig
-	originalNewGitRunner := newGitRunner
-	t.Cleanup(func() {
-		loadEffectiveCloneConfig = originalLoadConfig
-		newGitRunner = originalNewGitRunner
-	})
-
 	cloneRoot := t.TempDir()
 	requestedURL := "https://example.com/acme/repo.git"
 	conflictingOrigin := "https://example.com/other/repo.git"
@@ -67,18 +47,12 @@ func TestCloneRejectsExistingRepositoryWithMismatchedOrigin(t *testing.T) {
 		t.Fatalf("create existing git repository: %v", err)
 	}
 
-	loadEffectiveCloneConfig = func() (configstore.EffectiveConfig, error) {
-		return configstore.EffectiveConfig{CloneRoot: cloneRoot}, nil
-	}
 	fakeRunner.SetOriginURL(conflictingOrigin)
-	newGitRunner = func() gitrunner.Runner {
-		return fakeRunner
-	}
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"clone", requestedURL}, &stdout, &stderr)
+	exitCode := executeCloneCommand(cloneRoot, fakeRunner, []string{"clone", requestedURL}, &stdout, &stderr)
 	if exitCode != 1 {
 		t.Fatalf("Execute exit code = %d, want 1\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -96,15 +70,70 @@ func TestCloneRejectsExistingRepositoryWithMismatchedOrigin(t *testing.T) {
 	}
 }
 
-func TestCloneAcceptsPreExistingEmptyDestination(t *testing.T) {
+func TestCloneRejectsExistingBrokenGitDirectoryWithActionableError(t *testing.T) {
 	fakeRunner := gitrunnertest.New()
 
-	originalLoadConfig := loadEffectiveCloneConfig
-	originalNewGitRunner := newGitRunner
-	t.Cleanup(func() {
-		loadEffectiveCloneConfig = originalLoadConfig
-		newGitRunner = originalNewGitRunner
+	cloneRoot := t.TempDir()
+	requestedURL := "https://example.com/acme/repo.git"
+	destinationPath := filepath.Join(cloneRoot, "example.com", "acme", "repo")
+	if err := os.MkdirAll(filepath.Join(destinationPath, ".git"), 0o755); err != nil {
+		t.Fatalf("create broken git repository: %v", err)
+	}
+
+	fakeRunner.StubOriginURL(func(repoPath string) (string, error) {
+		return "", errors.New("bad config")
 	})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := executeCloneCommand(cloneRoot, fakeRunner, []string{"clone", requestedURL}, &stdout, &stderr)
+	if exitCode != 1 {
+		t.Fatalf("Execute exit code = %d, want 1\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
+	}
+
+	for _, want := range []string{destinationPath, "destination exists but is not a git repository", "Move or remove it first"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr = %q, want %q", stderr.String(), want)
+		}
+	}
+	if strings.Contains(stderr.String(), "inspect destination origin") {
+		t.Fatalf("stderr = %q, did not want low-level origin inspection error", stderr.String())
+	}
+	if got := fakeRunner.CloneCalls(); len(got) != 0 {
+		t.Fatalf("CloneCalls = %#v, want no clone", got)
+	}
+}
+
+func TestCloneAcceptsExistingRepositoryWithMatchingOrigin(t *testing.T) {
+	fakeRunner := gitrunnertest.New()
+
+	cloneRoot := t.TempDir()
+	requestedURL := "https://example.com/acme/repo.git"
+	destinationPath := filepath.Join(cloneRoot, "example.com", "acme", "repo")
+	if err := os.MkdirAll(filepath.Join(destinationPath, ".git"), 0o755); err != nil {
+		t.Fatalf("create existing git repository: %v", err)
+	}
+
+	fakeRunner.SetOriginURL(requestedURL)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := executeCloneCommand(cloneRoot, fakeRunner, []string{"clone", requestedURL}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
+	}
+	if stdout.String() != destinationPath+"\n" {
+		t.Fatalf("stdout = %q, want destination path", stdout.String())
+	}
+	if got := fakeRunner.CloneCalls(); len(got) != 0 {
+		t.Fatalf("CloneCalls = %#v, want no clone", got)
+	}
+}
+
+func TestCloneAcceptsPreExistingEmptyDestination(t *testing.T) {
+	fakeRunner := gitrunnertest.New()
 
 	cloneRoot := t.TempDir()
 	rawURL := "https://example.com/acme/repo.git"
@@ -113,17 +142,10 @@ func TestCloneAcceptsPreExistingEmptyDestination(t *testing.T) {
 		t.Fatalf("create empty destination: %v", err)
 	}
 
-	loadEffectiveCloneConfig = func() (configstore.EffectiveConfig, error) {
-		return configstore.EffectiveConfig{CloneRoot: cloneRoot}, nil
-	}
-	newGitRunner = func() gitrunner.Runner {
-		return fakeRunner
-	}
-
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"clone", rawURL}, &stdout, &stderr)
+	exitCode := executeCloneCommand(cloneRoot, fakeRunner, []string{"clone", rawURL}, &stdout, &stderr)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -141,34 +163,21 @@ func TestCloneAcceptsPreExistingEmptyDestination(t *testing.T) {
 func TestCloneCleansUpCreatedDestinationAfterFailure(t *testing.T) {
 	fakeRunner := gitrunnertest.New()
 
-	originalLoadConfig := loadEffectiveCloneConfig
-	originalNewGitRunner := newGitRunner
-	t.Cleanup(func() {
-		loadEffectiveCloneConfig = originalLoadConfig
-		newGitRunner = originalNewGitRunner
-	})
-
 	cloneRoot := t.TempDir()
 	rawURL := "https://example.com/acme/repo.git"
 	destinationPath := filepath.Join(cloneRoot, "example.com", "acme", "repo")
 
-	loadEffectiveCloneConfig = func() (configstore.EffectiveConfig, error) {
-		return configstore.EffectiveConfig{CloneRoot: cloneRoot}, nil
-	}
 	fakeRunner.StubClone(func(url, destPath string) error {
 		if err := os.MkdirAll(filepath.Join(destPath, ".git"), 0o755); err != nil {
 			t.Fatalf("simulate partial clone: %v", err)
 		}
 		return errors.New("clone failed")
 	})
-	newGitRunner = func() gitrunner.Runner {
-		return fakeRunner
-	}
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"clone", rawURL}, &stdout, &stderr)
+	exitCode := executeCloneCommand(cloneRoot, fakeRunner, []string{"clone", rawURL}, &stdout, &stderr)
 	if exitCode != 1 {
 		t.Fatalf("Execute exit code = %d, want 1\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -181,13 +190,6 @@ func TestCloneCleansUpCreatedDestinationAfterFailure(t *testing.T) {
 func TestCloneLeavesPreExistingEmptyDestinationAfterFailure(t *testing.T) {
 	fakeRunner := gitrunnertest.New()
 
-	originalLoadConfig := loadEffectiveCloneConfig
-	originalNewGitRunner := newGitRunner
-	t.Cleanup(func() {
-		loadEffectiveCloneConfig = originalLoadConfig
-		newGitRunner = originalNewGitRunner
-	})
-
 	cloneRoot := t.TempDir()
 	rawURL := "https://example.com/acme/repo.git"
 	destinationPath := filepath.Join(cloneRoot, "example.com", "acme", "repo")
@@ -195,23 +197,17 @@ func TestCloneLeavesPreExistingEmptyDestinationAfterFailure(t *testing.T) {
 		t.Fatalf("create empty destination: %v", err)
 	}
 
-	loadEffectiveCloneConfig = func() (configstore.EffectiveConfig, error) {
-		return configstore.EffectiveConfig{CloneRoot: cloneRoot}, nil
-	}
 	fakeRunner.StubClone(func(url, destPath string) error {
 		if err := os.WriteFile(filepath.Join(destPath, "partial"), []byte("partial\n"), 0o600); err != nil {
 			t.Fatalf("simulate partial clone: %v", err)
 		}
 		return errors.New("clone failed")
 	})
-	newGitRunner = func() gitrunner.Runner {
-		return fakeRunner
-	}
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"clone", rawURL}, &stdout, &stderr)
+	exitCode := executeCloneCommand(cloneRoot, fakeRunner, []string{"clone", rawURL}, &stdout, &stderr)
 	if exitCode != 1 {
 		t.Fatalf("Execute exit code = %d, want 1\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -223,4 +219,40 @@ func TestCloneLeavesPreExistingEmptyDestinationAfterFailure(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(destinationPath, "partial")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("partial file existence = %v, want removed from pre-existing destination", err)
 	}
+}
+
+func TestMkdirAllTrackedRecordsOnlyDirectoriesItCreates(t *testing.T) {
+	root := t.TempDir()
+	preExisting := filepath.Join(root, "example.com")
+	if err := os.Mkdir(preExisting, 0o755); err != nil {
+		t.Fatalf("create pre-existing directory: %v", err)
+	}
+
+	leaf := filepath.Join(preExisting, "acme", "repo")
+	created, err := mkdirAllTracked(leaf, 0o755)
+	if err != nil {
+		t.Fatalf("mkdirAllTracked returned error: %v", err)
+	}
+
+	want := []string{leaf, filepath.Dir(leaf)}
+	if len(created) != len(want) {
+		t.Fatalf("created = %#v, want %#v", created, want)
+	}
+	for index := range want {
+		if created[index] != want[index] {
+			t.Fatalf("created = %#v, want %#v", created, want)
+		}
+	}
+}
+
+func executeCloneCommand(cloneRoot string, runner gitrunner.Runner, args []string, stdout, stderr *bytes.Buffer) int {
+	deps := DefaultDependencies()
+	deps.LoadEffectiveCloneConfig = func() (configstore.EffectiveConfig, error) {
+		return configstore.EffectiveConfig{CloneRoot: cloneRoot}, nil
+	}
+	deps.NewGitRunner = func() gitrunner.Runner {
+		return runner
+	}
+
+	return execute(args, stdout, stderr, deps)
 }

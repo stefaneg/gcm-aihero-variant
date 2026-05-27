@@ -17,7 +17,7 @@ func TestOpenPrintsSelectedRepositoryPath(t *testing.T) {
 	secondRepository := createRepository(t, cloneRoot, "gitlab.com", "team", "worker")
 
 	t.Setenv("GCM_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
-	restoreOpenDependencies := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, func(input []string, query string, preview string) (string, int, error) {
+	deps := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, func(input []string, query string, preview string) (string, int, error) {
 		assertStringSlice(t, input, []string{firstRepository, secondRepository})
 		if query != "" {
 			t.Fatalf("query = %q, want empty", query)
@@ -27,12 +27,11 @@ func TestOpenPrintsSelectedRepositoryPath(t *testing.T) {
 		}
 		return secondRepository + "\n", 0, nil
 	})
-	defer restoreOpenDependencies()
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"open"}, &stdout, &stderr)
+	exitCode := execute([]string{"open"}, &stdout, &stderr, deps)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -50,18 +49,17 @@ func TestOpenPassesQueryToFZF(t *testing.T) {
 	selectedRepository := createRepository(t, cloneRoot, "github.com", "acme", "api")
 
 	t.Setenv("GCM_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
-	restoreOpenDependencies := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, func(input []string, query string, preview string) (string, int, error) {
+	deps := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, func(input []string, query string, preview string) (string, int, error) {
 		if query != "api" {
 			t.Fatalf("query = %q, want api", query)
 		}
 		return selectedRepository + "\n", 0, nil
 	})
-	defer restoreOpenDependencies()
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"open", "api"}, &stdout, &stderr)
+	exitCode := execute([]string{"open", "api"}, &stdout, &stderr, deps)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -72,15 +70,14 @@ func TestOpenAbortReturnsZeroWithEmptyStdout(t *testing.T) {
 	createRepository(t, cloneRoot, "github.com", "acme", "api")
 
 	t.Setenv("GCM_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
-	restoreOpenDependencies := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, func(input []string, query string, preview string) (string, int, error) {
+	deps := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, func(input []string, query string, preview string) (string, int, error) {
 		return "", 130, nil
 	})
-	defer restoreOpenDependencies()
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"open"}, &stdout, &stderr)
+	exitCode := execute([]string{"open"}, &stdout, &stderr, deps)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -94,14 +91,13 @@ func TestOpenWithMissingFZFReturnsActionableError(t *testing.T) {
 	createRepository(t, cloneRoot, "github.com", "acme", "api")
 
 	t.Setenv("GCM_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
-	restoreOpenDependencies := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, nil)
-	openFZFAvailable = func() bool { return false }
-	defer restoreOpenDependencies()
+	deps := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, nil)
+	deps.OpenFZFAvailable = func() bool { return false }
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"open"}, &stdout, &stderr)
+	exitCode := execute([]string{"open"}, &stdout, &stderr, deps)
 	if exitCode == 0 {
 		t.Fatalf("Execute exit code = %d, want nonzero", exitCode)
 	}
@@ -117,13 +113,12 @@ func TestOpenWithEmptyCloneRootReturnsActionableError(t *testing.T) {
 	cloneRoot := t.TempDir()
 
 	t.Setenv("GCM_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
-	restoreOpenDependencies := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, nil)
-	defer restoreOpenDependencies()
+	deps := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, nil)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"open"}, &stdout, &stderr)
+	exitCode := execute([]string{"open"}, &stdout, &stderr, deps)
 	if exitCode != 1 {
 		t.Fatalf("Execute exit code = %d, want 1\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -136,13 +131,12 @@ func TestOpenWithMissingCloneRootReturnsDistinctActionableError(t *testing.T) {
 	cloneRoot := filepath.Join(t.TempDir(), "missing")
 
 	t.Setenv("GCM_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
-	restoreOpenDependencies := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, nil)
-	defer restoreOpenDependencies()
+	deps := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, nil)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"open"}, &stdout, &stderr)
+	exitCode := execute([]string{"open"}, &stdout, &stderr, deps)
 	if exitCode != 1 {
 		t.Fatalf("Execute exit code = %d, want 1\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -159,16 +153,15 @@ func TestOpenBareInTTYEmitsShellInitHint(t *testing.T) {
 	selectedRepository := createRepository(t, cloneRoot, "github.com", "acme", "api")
 
 	t.Setenv("GCM_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
-	restoreOpenDependencies := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, func(input []string, query string, preview string) (string, int, error) {
+	deps := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, func(input []string, query string, preview string) (string, int, error) {
 		return selectedRepository + "\n", 0, nil
 	})
-	openWriterIsTTY = func(writer any) bool { return true }
-	defer restoreOpenDependencies()
+	deps.OpenWriterIsTTY = func(writer any) bool { return true }
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"open"}, &stdout, &stderr)
+	exitCode := execute([]string{"open"}, &stdout, &stderr, deps)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -182,15 +175,14 @@ func TestOpenSuppressesShellInitHintWhenStdoutIsCaptured(t *testing.T) {
 	selectedRepository := createRepository(t, cloneRoot, "github.com", "acme", "api")
 
 	t.Setenv("GCM_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
-	restoreOpenDependencies := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, func(input []string, query string, preview string) (string, int, error) {
+	deps := stubOpenDependencies(t, configstore.EffectiveConfig{CloneRoot: cloneRoot}, func(input []string, query string, preview string) (string, int, error) {
 		return selectedRepository + "\n", 0, nil
 	})
-	defer restoreOpenDependencies()
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"open"}, &stdout, &stderr)
+	exitCode := execute([]string{"open"}, &stdout, &stderr, deps)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -199,33 +191,24 @@ func TestOpenSuppressesShellInitHintWhenStdoutIsCaptured(t *testing.T) {
 	}
 }
 
-func stubOpenDependencies(t *testing.T, effectiveConfig configstore.EffectiveConfig, fzf func([]string, string, string) (string, int, error)) func() {
+func stubOpenDependencies(t *testing.T, effectiveConfig configstore.EffectiveConfig, fzf func([]string, string, string) (string, int, error)) Dependencies {
 	t.Helper()
 
-	originalLoad := loadEffectiveOpenConfig
-	originalFZF := runOpenFZF
-	originalFZFAvailable := openFZFAvailable
-	originalWriterIsTTY := openWriterIsTTY
-
-	loadEffectiveOpenConfig = func() (configstore.EffectiveConfig, error) {
+	deps := DefaultDependencies()
+	deps.LoadEffectiveOpenConfig = func() (configstore.EffectiveConfig, error) {
 		return effectiveConfig, nil
 	}
 	if fzf != nil {
-		runOpenFZF = fzf
+		deps.RunOpenFZF = fzf
 	} else {
-		runOpenFZF = func([]string, string, string) (string, int, error) {
+		deps.RunOpenFZF = func([]string, string, string) (string, int, error) {
 			return "", 0, errors.New("unexpected fzf call")
 		}
 	}
-	openFZFAvailable = func() bool { return true }
-	openWriterIsTTY = func(writer any) bool { return false }
+	deps.OpenFZFAvailable = func() bool { return true }
+	deps.OpenWriterIsTTY = func(writer any) bool { return false }
 
-	return func() {
-		loadEffectiveOpenConfig = originalLoad
-		runOpenFZF = originalFZF
-		openFZFAvailable = originalFZFAvailable
-		openWriterIsTTY = originalWriterIsTTY
-	}
+	return deps
 }
 
 func createRepository(t *testing.T, cloneRoot string, parts ...string) string {

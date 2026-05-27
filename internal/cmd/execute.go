@@ -1,20 +1,32 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"git-clone-manager/internal/exitcodes"
+
+	"github.com/spf13/cobra"
 )
 
+var errUnknownCommand = errors.New("unknown command")
+
 func Execute(args []string, stdout, stderr io.Writer) int {
-	root := NewRootCommand()
+	return execute(args, stdout, stderr, DefaultDependencies())
+}
+
+func execute(args []string, stdout, stderr io.Writer, deps Dependencies) int {
+	root := newRootCommand(deps)
 	root.SetArgs(args)
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 
-	err := normalizeError(root.Execute())
+	err := detectUnknownCommand(root, args)
+	if err == nil {
+		err = root.Execute()
+	}
+	err = normalizeError(err)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 	}
@@ -31,10 +43,22 @@ func normalizeError(err error) error {
 		return err
 	}
 
-	message := err.Error()
-	if strings.HasPrefix(message, "unknown command ") {
+	if errors.Is(err, errUnknownCommand) {
 		return exitcodes.UsageError(err)
 	}
 
 	return err
+}
+
+func detectUnknownCommand(root *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+
+	_, _, err := root.Find(args)
+	if err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("%w: %v", errUnknownCommand, err)
 }

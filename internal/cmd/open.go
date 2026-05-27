@@ -4,38 +4,21 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
 
-	"git-clone-manager/internal/configstore"
 	"git-clone-manager/internal/repositorywalker"
 
 	"github.com/spf13/cobra"
 )
 
-var (
-	loadEffectiveOpenConfig = func() (configstore.EffectiveConfig, error) {
-		return configstore.New().Effective()
-	}
-	openFZFAvailable = func() bool {
-		_, err := exec.LookPath("fzf")
-		return err == nil
-	}
-	runOpenFZF      = runFZF
-	openWriterIsTTY = func(writer any) bool {
-		ioWriter, ok := writer.(io.Writer)
-		return ok && writerIsTTY(ioWriter)
-	}
-)
-
-func newOpenCommand() *cobra.Command {
+func newOpenCommand(deps Dependencies) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "open [query]",
 		Short: "Select a repository under the clone root",
 		RunE: func(command *cobra.Command, args []string) error {
-			effectiveConfig, err := loadEffectiveOpenConfig()
+			effectiveConfig, err := deps.LoadEffectiveOpenConfig()
 			if err != nil {
 				return err
 			}
@@ -62,7 +45,7 @@ func newOpenCommand() *cobra.Command {
 				return fmt.Errorf("clone root %s contains no repositories. Clone one with: gcm clone <url>", cloneRoot)
 			}
 
-			if !openFZFAvailable() {
+			if !deps.OpenFZFAvailable() {
 				return fmt.Errorf("fzf is required for gcm open. Install it from https://github.com/junegunn/fzf#installation")
 			}
 
@@ -71,7 +54,7 @@ func newOpenCommand() *cobra.Command {
 				query = args[0]
 			}
 
-			selection, exitCode, err := runOpenFZF(repositoryPaths, query, openPreviewArgument())
+			selection, exitCode, err := deps.RunOpenFZF(repositoryPaths, query, openPreviewArgument())
 			if err != nil {
 				return err
 			}
@@ -88,7 +71,7 @@ func newOpenCommand() *cobra.Command {
 				return err
 			}
 
-			if openWriterIsTTY(command.OutOrStdout()) {
+			if deps.OpenWriterIsTTY(command.OutOrStdout()) {
 				_, err := fmt.Fprintln(command.ErrOrStderr(), `gcm open prints a path unless shell integration is installed. Run: eval "$(gcm shell-init)"`)
 				return err
 			}

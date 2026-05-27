@@ -6,12 +6,9 @@ import (
 	"io"
 	"os"
 
-	"git-clone-manager/internal/configstore"
 	"git-clone-manager/internal/exitcodes"
-	"git-clone-manager/internal/gitrunner"
 	"git-clone-manager/internal/statuscollector"
 	"git-clone-manager/internal/statusformatter"
-	"git-clone-manager/internal/statuspipeline"
 
 	"github.com/spf13/cobra"
 )
@@ -20,21 +17,12 @@ type statusCollector interface {
 	Collect(cloneRoot string, noFetch bool) ([]statuscollector.Result, error)
 }
 
-var (
-	loadEffectiveStatusConfig = func() (configstore.EffectiveConfig, error) {
-		return configstore.New().Effective()
-	}
-	newStatusCollector = func() statusCollector {
-		return statuspipeline.New(gitrunner.New())
-	}
-)
-
-func newStatusCommand() *cobra.Command {
+func newStatusCommand(deps Dependencies) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "status",
 		Short: "Show repository status under the clone root",
 		RunE: func(command *cobra.Command, args []string) error {
-			effectiveConfig, err := loadEffectiveStatusConfig()
+			effectiveConfig, err := deps.LoadEffectiveStatusConfig()
 			if err != nil {
 				return err
 			}
@@ -54,23 +42,24 @@ func newStatusCommand() *cobra.Command {
 				return err
 			}
 
-			collected, err := newStatusCollector().Collect(cloneRoot, noFetch)
-			if err != nil {
+			collected, err := deps.NewStatusCollector().Collect(cloneRoot, noFetch)
+			if err != nil && len(collected) == 0 {
 				return err
 			}
+			batchErr := err
 
 			results := make([]statuscollector.Result, 0, len(collected))
-			fetchFailed := false
+			partialFailure := false
 			for _, result := range collected {
 				if nonDefaultOnly && !statusResultIsNonDefault(result) {
-					if result.ErrorState == statuscollector.ErrorStateFetchFailed {
-						fetchFailed = true
+					if result.ErrorState == statuscollector.ErrorStateFetchFailed || result.ErrorState == statuscollector.ErrorStateUnknown {
+						partialFailure = true
 					}
 					continue
 				}
 				results = append(results, result)
-				if result.ErrorState == statuscollector.ErrorStateFetchFailed {
-					fetchFailed = true
+				if result.ErrorState == statuscollector.ErrorStateFetchFailed || result.ErrorState == statuscollector.ErrorStateUnknown {
+					partialFailure = true
 				}
 			}
 
@@ -88,7 +77,11 @@ func newStatusCommand() *cobra.Command {
 				return err
 			}
 
-			if fetchFailed {
+			if batchErr != nil {
+				return batchErr
+			}
+
+			if partialFailure {
 				return exitcodes.WithCode(exitcodes.General, errors.New("one or more repositories failed to fetch"))
 			}
 

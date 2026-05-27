@@ -1,7 +1,9 @@
 package workerpool
 
 import (
+	"fmt"
 	"runtime"
+	"runtime/debug"
 	"sync"
 )
 
@@ -31,11 +33,7 @@ func Run[Item any, Output any](items []Item, work func(Item) (Output, error)) []
 			defer waitGroup.Done()
 
 			for job := range jobs {
-				value, err := work(job.item)
-				results[job.index] = Result[Output]{
-					Value: value,
-					Err:   err,
-				}
+				results[job.index] = runWork(job.item, work)
 			}
 		}()
 	}
@@ -50,4 +48,18 @@ func Run[Item any, Output any](items []Item, work func(Item) (Output, error)) []
 
 	waitGroup.Wait()
 	return results
+}
+
+func runWork[Item any, Output any](item Item, work func(Item) (Output, error)) (result Result[Output]) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result.Err = fmt.Errorf("worker panic for item %v: %v\n%s", item, recovered, debug.Stack())
+		}
+	}()
+
+	value, err := work(item)
+	return Result[Output]{
+		Value: value,
+		Err:   err,
+	}
 }

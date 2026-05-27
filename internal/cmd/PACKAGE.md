@@ -15,7 +15,7 @@ This package is the canonical home for translating `gcm` command invocations int
 
 ## Responsibilities
 
-- Owns: root command construction and Cobra subcommand registration.
+- Owns: root command construction, Cobra subcommand registration, and explicit command dependency wiring.
 - Owns: `Execute`, including writer injection, error printing, usage-error normalisation, and exit-code selection.
 - Owns: clone command flow from config lookup through derived path inspection and git clone execution.
 - Owns: config command flow for setting and showing `clone_root`.
@@ -46,6 +46,7 @@ This package is the canonical home for translating `gcm` command invocations int
 ## Invariants & conventions
 
 - Commands must use injected Cobra stdout/stderr writers rather than ambient stdout/stderr.
+- Tests should pass command dependencies explicitly rather than mutating package-level seams.
 - Cobra usage and flag errors are wrapped as usage errors so they exit with code 2.
 - `Execute` prints exactly one normalised error line to stderr when command execution fails.
 - `clone` passes the raw URL to git and uses `repourl` only for the destination path.
@@ -65,29 +66,28 @@ This package is the canonical home for translating `gcm` command invocations int
 - [`../../docs/adr/0003-protocol-passed-as-is.md`](../../docs/adr/0003-protocol-passed-as-is.md) — clone passes the
   supplied URL to git unchanged.
 
-## Clean-concept rating — 6/10
+## Clean-concept rating — 7/10
 
 A reviewer assessment of how cleanly this package owns a single concept. Captured here so the next reader sees the
 known design debt up front; revisit when any of the items below is addressed.
 
-The package is a coherent CLI application layer, but it currently mixes command assembly, filesystem preparation,
-presentation-adjacent option detection, and test seams. That is acceptable at the current size, but the package
-already fails the smell test through package-level mutable state and several distinct workflow concerns.
+The package is a coherent CLI application layer with explicit dependency wiring for command seams. It still mixes
+command assembly, filesystem preparation, and presentation-adjacent option detection, which is acceptable at the
+current size but worth watching as workflows grow.
 
 **Strengths**
 
 - `Execute` in `execute.go` cleanly centralises writer injection, error normalisation, and exit-code selection.
 - `NewRootCommand` in `root.go` keeps Cobra assembly explicit and routes usage errors through `exitcodes`.
+- `Dependencies` in `dependencies.go` removes package-level mutable test seams and makes command tests parallel-safe.
 - `status.go` delegates data collection and formatting to `statuspipeline` and `statusformatter`.
 
 **What costs the points**
 
-1. `clone.go` lines 18-23 keep `loadEffectiveCloneConfig` and `newGitRunner` as package-level mutable function
-   variables; move these behind a command dependency struct or constructor parameter.
-2. `clone.go` combines home expansion, clone-root creation, destination inspection, and command messaging in the same
+1. `clone.go` combines home expansion, clone-root creation, destination inspection, and command messaging in the same
    file as Cobra wiring; split filesystem preparation behind a small command-local service if clone grows.
-3. `status.go` owns TTY and `NO_COLOR` detection alongside flag parsing and exit policy; keep it here only while it
+2. `status.go` owns TTY and `NO_COLOR` detection alongside flag parsing and exit policy; keep it here only while it
    remains command wiring, or move option detection to a presentation boundary if more output modes appear.
 
-**Path to 7**: Replace package-level mutable test seams with explicit command dependencies, then keep clone filesystem
-helpers private to a narrow command service so the package remains an application layer rather than a utility sink.
+**Path to 8**: Keep clone filesystem helpers private to a narrow command service so the package remains an application
+layer rather than a utility sink.

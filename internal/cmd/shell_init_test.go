@@ -198,6 +198,9 @@ func TestShellInitInstallWritesAndReusesZshRC(t *testing.T) {
 	if !strings.Contains(string(data), `eval "$(gcm shell-init)"`) {
 		t.Fatalf(".zshrc = %q, want install line", data)
 	}
+	if !strings.Contains(string(data), shellInitInstallMarker) {
+		t.Fatalf(".zshrc = %q, want install marker", data)
+	}
 
 	firstContents := string(data)
 	stderr.Reset()
@@ -216,6 +219,62 @@ func TestShellInitInstallWritesAndReusesZshRC(t *testing.T) {
 		t.Fatalf(".zshrc changed on second install:\nfirst %q\nsecond %q", firstContents, data)
 	}
 
+	if !strings.Contains(stderr.String(), "Already installed in "+rcPath+".") {
+		t.Fatalf("stderr = %q, want already-installed message", stderr.String())
+	}
+}
+
+func TestShellInitInstallIgnoresCommentMentioningShellInit(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("SHELL", "/bin/zsh")
+	rcPath := filepath.Join(homeDir, ".zshrc")
+	if err := os.WriteFile(rcPath, []byte("# disabled: gcm shell-init\n"), 0o644); err != nil {
+		t.Fatalf("write .zshrc: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Execute([]string{"shell-init", "--install"}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
+	}
+
+	data, err := os.ReadFile(rcPath)
+	if err != nil {
+		t.Fatalf("read .zshrc: %v", err)
+	}
+	if !strings.Contains(string(data), shellInitInstallMarker) || !strings.Contains(string(data), `eval "$(gcm shell-init)"`) {
+		t.Fatalf(".zshrc = %q, want marker and install line", data)
+	}
+}
+
+func TestShellInitInstallKeepsLegacyInstallIdempotent(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("SHELL", "/bin/zsh")
+	rcPath := filepath.Join(homeDir, ".zshrc")
+	legacy := "\n# gcm shell-init\n" + installLine("zsh") + "\n"
+	if err := os.WriteFile(rcPath, []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write .zshrc: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Execute([]string{"shell-init", "--install"}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
+	}
+
+	data, err := os.ReadFile(rcPath)
+	if err != nil {
+		t.Fatalf("read .zshrc: %v", err)
+	}
+	if string(data) != legacy {
+		t.Fatalf(".zshrc changed for legacy install:\n%s", data)
+	}
 	if !strings.Contains(stderr.String(), "Already installed in "+rcPath+".") {
 		t.Fatalf("stderr = %q, want already-installed message", stderr.String())
 	}

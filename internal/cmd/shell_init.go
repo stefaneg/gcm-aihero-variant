@@ -7,17 +7,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git-clone-manager/internal/configstore"
 	"git-clone-manager/internal/exitcodes"
 
 	"github.com/spf13/cobra"
 )
 
-var loadEffectiveShellConfig = func() (configstore.EffectiveConfig, error) {
-	return configstore.New().Effective()
-}
+const shellInitInstallMarker = "# gcm shell-init (managed)"
 
-func newShellInitCommand() *cobra.Command {
+func newShellInitCommand(deps Dependencies) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "shell-init [bash|zsh|fish]",
 		Short: "Print shell integration for changing directory after clone or open",
@@ -36,7 +33,7 @@ func newShellInitCommand() *cobra.Command {
 				return installShellInit(shell, command.ErrOrStderr())
 			}
 
-			effectiveConfig, err := loadEffectiveShellConfig()
+			effectiveConfig, err := deps.LoadEffectiveShellConfig()
 			if err != nil {
 				return err
 			}
@@ -158,7 +155,7 @@ func installShellInit(shell string, stderr io.Writer) error {
 		return fmt.Errorf("Error: rc file %q: %w", rcPath, err)
 	}
 
-	if strings.Contains(string(data), "gcm shell-init") {
+	if shellInitInstalled(string(data), shell) {
 		_, err := fmt.Fprintf(stderr, "Already installed in %s.\n", rcPath)
 		return err
 	}
@@ -173,12 +170,26 @@ func installShellInit(shell string, stderr io.Writer) error {
 	}
 	defer file.Close()
 
-	if _, err := fmt.Fprintf(file, "\n# gcm shell-init\n%s\n", installLine(shell)); err != nil {
+	if _, err := fmt.Fprintf(file, "\n%s\n%s\n", shellInitInstallMarker, installLine(shell)); err != nil {
 		return fmt.Errorf("Error: rc file %q: %w", rcPath, err)
 	}
 
 	_, err = fmt.Fprintf(stderr, "Installed in %s. Reload your shell or run: source %s\n", rcPath, rcPath)
 	return err
+}
+
+func shellInitInstalled(data string, shell string) bool {
+	if strings.Contains(data, shellInitInstallMarker) {
+		return true
+	}
+
+	for _, line := range strings.Split(data, "\n") {
+		if strings.TrimSpace(line) == installLine(shell) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func rcFilePath(shell string, homeDir string) (string, error) {

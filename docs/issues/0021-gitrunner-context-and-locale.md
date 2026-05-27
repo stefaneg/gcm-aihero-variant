@@ -1,6 +1,6 @@
 # 0021 — gitrunner: context cancellation + locale-independent stderr classification
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

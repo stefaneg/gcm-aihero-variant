@@ -174,6 +174,9 @@ func formatBadges(result statuscollector.Result, options Options) string {
 	if result.ErrorState == statuscollector.ErrorStateDefaultUnknown {
 		badges = append(badges, maybeColorize("[default-unknown]", ansiMagenta, shouldColorize(options)))
 	}
+	if result.ErrorState == statuscollector.ErrorStateUnknown {
+		badges = append(badges, maybeColorize("[error]", ansiRed, shouldColorize(options)))
+	}
 
 	return strings.Join(badges, " ")
 }
@@ -192,7 +195,7 @@ func sortTier(result statuscollector.Result) int {
 	if isNonDefault(result) {
 		return 0
 	}
-	if result.ErrorState == statuscollector.ErrorStateNoRemote || result.ErrorState == statuscollector.ErrorStateDefaultUnknown {
+	if result.ErrorState == statuscollector.ErrorStateNoRemote || result.ErrorState == statuscollector.ErrorStateDefaultUnknown || result.ErrorState == statuscollector.ErrorStateUnknown {
 		return 2
 	}
 	if result.ErrorState == statuscollector.ErrorStateFetchFailed && result.DefaultBranch == "" {

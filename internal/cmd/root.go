@@ -7,6 +7,10 @@ import (
 )
 
 func NewRootCommand() *cobra.Command {
+	return newRootCommand(DefaultDependencies())
+}
+
+func newRootCommand(deps Dependencies) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "gcm",
 		Short:         "Manage cloned git repositories",
@@ -18,11 +22,11 @@ func NewRootCommand() *cobra.Command {
 		return exitcodes.UsageError(err)
 	})
 
-	root.AddCommand(newCloneCommand())
-	root.AddCommand(newOpenCommand())
-	root.AddCommand(newStatusCommand())
+	root.AddCommand(newCloneCommand(deps))
+	root.AddCommand(newOpenCommand(deps))
+	root.AddCommand(newStatusCommand(deps))
 	root.AddCommand(newConfigCommand())
-	root.AddCommand(newShellInitCommand())
+	root.AddCommand(newShellInitCommand(deps))
 
 	return root
 }

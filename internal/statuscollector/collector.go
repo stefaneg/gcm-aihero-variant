@@ -1,6 +1,7 @@
 package statuscollector
 
 import (
+	"context"
 	"errors"
 
 	"git-clone-manager/internal/gitrunner"
@@ -13,6 +14,7 @@ const (
 	ErrorStateFetchFailed    ErrorState = "fetch-failed"
 	ErrorStateNoRemote       ErrorState = "no-remote"
 	ErrorStateDefaultUnknown ErrorState = "default-unknown"
+	ErrorStateUnknown        ErrorState = "error"
 )
 
 type Result struct {
@@ -34,13 +36,20 @@ func New(runner gitrunner.Runner) *Collector {
 
 func (collector *Collector) Collect(repositoryPath string, noFetch bool) (Result, error) {
 	result := Result{RepositoryPath: repositoryPath}
+	ctx, cancel := context.WithTimeout(context.Background(), gitrunner.DefaultCommandTimeout)
+	defer cancel()
 
 	if !noFetch {
-		if err := collector.runner.Fetch(repositoryPath); err != nil {
-			switch err.(type) {
-			case *gitrunner.NetworkError:
+		if err := collector.runner.Fetch(ctx, repositoryPath); err != nil {
+			var networkErr *gitrunner.NetworkError
+			var noRemoteErr *gitrunner.NoRemoteError
+			var timeoutErr *gitrunner.TimeoutError
+			switch {
+			case errors.As(err, &networkErr):
 				result.ErrorState = ErrorStateFetchFailed
-			case *gitrunner.NoRemoteError:
+			case errors.As(err, &timeoutErr):
+				result.ErrorState = ErrorStateFetchFailed
+			case errors.As(err, &noRemoteErr):
 				result.ErrorState = ErrorStateNoRemote
 			default:
 				return Result{}, err
@@ -48,13 +57,13 @@ func (collector *Collector) Collect(repositoryPath string, noFetch bool) (Result
 		}
 	}
 
-	currentBranch, err := collector.runner.CurrentBranch(repositoryPath)
+	currentBranch, err := collector.runner.CurrentBranch(ctx, repositoryPath)
 	if err != nil {
 		return Result{}, err
 	}
 	result.CurrentBranch = currentBranch
 
-	defaultBranch, err := collector.runner.DefaultBranch(repositoryPath)
+	defaultBranch, err := collector.runner.DefaultBranch(ctx, repositoryPath)
 	if err != nil {
 		var originHeadErr *gitrunner.OriginHEADNotSetError
 		var noRemoteErr *gitrunner.NoRemoteError
@@ -65,7 +74,6 @@ func (collector *Collector) Collect(repositoryPath string, noFetch bool) (Result
 			}
 		case errors.As(err, &noRemoteErr):
 			result.ErrorState = ErrorStateNoRemote
-			defaultBranch = "main"
 		default:
 			return Result{}, err
 		}
@@ -73,7 +81,7 @@ func (collector *Collector) Collect(repositoryPath string, noFetch bool) (Result
 	result.DefaultBranch = defaultBranch
 
 	if result.ErrorState == ErrorStateNoRemote || result.ErrorState == ErrorStateDefaultUnknown {
-		dirtyCount, err := collector.runner.DirtyCount(repositoryPath)
+		dirtyCount, err := collector.runner.DirtyCount(ctx, repositoryPath)
 		if err != nil {
 			return Result{}, err
 		}
@@ -82,13 +90,13 @@ func (collector *Collector) Collect(repositoryPath string, noFetch bool) (Result
 		return result, nil
 	}
 
-	commitsBehind, err := collector.runner.CommitsBehind(repositoryPath)
+	commitsBehind, err := collector.runner.CommitsBehind(ctx, repositoryPath)
 	if err != nil {
 		return Result{}, err
 	}
 	result.CommitsBehind = commitsBehind
 
-	dirtyCount, err := collector.runner.DirtyCount(repositoryPath)
+	dirtyCount, err := collector.runner.DirtyCount(ctx, repositoryPath)
 	if err != nil {
 		return Result{}, err
 	}

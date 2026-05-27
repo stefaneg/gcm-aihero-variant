@@ -1,6 +1,6 @@
 # 0020 — workerpool: recover panics in workers and surface as `Result.Err`
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

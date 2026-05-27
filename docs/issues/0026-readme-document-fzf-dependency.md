@@ -1,6 +1,6 @@
 # 0026 — README: document `fzf` as a required dependency for `gcm open`
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

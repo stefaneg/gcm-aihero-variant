@@ -1,33 +1,27 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
-	"git-clone-manager/internal/configstore"
 	"git-clone-manager/internal/gitrunner"
 	"git-clone-manager/internal/repourl"
 
 	"github.com/spf13/cobra"
 )
 
-var (
-	loadEffectiveCloneConfig = func() (configstore.EffectiveConfig, error) {
-		return configstore.New().Effective()
-	}
-	newGitRunner = gitrunner.New
-)
-
-func newCloneCommand() *cobra.Command {
+func newCloneCommand(deps Dependencies) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "clone <url>",
 		Short: "Clone a repository into its derived path",
 		RunE: func(command *cobra.Command, args []string) error {
-			effectiveConfig, err := loadEffectiveCloneConfig()
+			effectiveConfig, err := deps.LoadEffectiveCloneConfig()
 			if err != nil {
 				return err
 			}
@@ -47,7 +41,7 @@ func newCloneCommand() *cobra.Command {
 				return err
 			}
 
-			runner := newGitRunner()
+			runner := deps.NewGitRunner()
 			state, err := inspectDestination(destinationPath, args[0], runner)
 			if err != nil {
 				return err
@@ -71,7 +65,7 @@ func newCloneCommand() *cobra.Command {
 				return err
 			}
 
-			if err := runner.Clone(args[0], destinationPath); err != nil {
+			if err := runner.Clone(context.Background(), args[0], destinationPath); err != nil {
 				cleanupPartialClone(destinationPath, preExistingDestination, createdDirs)
 				return err
 			}
@@ -151,9 +145,9 @@ func inspectDestination(destinationPath string, requestedURL string, runner gitr
 
 	gitDirInfo, err := os.Stat(filepath.Join(destinationPath, ".git"))
 	if err == nil && gitDirInfo.IsDir() {
-		originURL, err := runner.OriginURL(destinationPath)
+		originURL, err := runner.OriginURL(context.Background(), destinationPath)
 		if err != nil {
-			return destinationReady, fmt.Errorf("inspect destination origin %q: %w", destinationPath, err)
+			return destinationBlocked, nil
 		}
 		if originURL != requestedURL {
 			return destinationReady, fmt.Errorf("cannot clone to %s: existing git repository has origin %q, not requested URL %q", destinationPath, originURL, requestedURL)
@@ -176,21 +170,38 @@ func inspectDestination(destinationPath string, requestedURL string, runner gitr
 }
 
 func mkdirAllTracked(path string, perm os.FileMode) ([]string, error) {
-	var missing []string
-	for current := path; current != "." && current != string(filepath.Separator); current = filepath.Dir(current) {
-		if _, err := os.Stat(current); err == nil {
-			break
-		} else if !errors.Is(err, os.ErrNotExist) {
+	cleanPath := filepath.Clean(path)
+	if cleanPath == "." || cleanPath == string(filepath.Separator) {
+		return nil, nil
+	}
+
+	var segments []string
+	for current := cleanPath; current != "." && current != string(filepath.Separator); current = filepath.Dir(current) {
+		segments = append(segments, current)
+	}
+	slices.Reverse(segments)
+
+	var created []string
+	for _, segment := range segments {
+		if err := os.Mkdir(segment, perm); err == nil {
+			created = append(created, segment)
+			continue
+		} else if errors.Is(err, os.ErrExist) {
+			info, statErr := os.Stat(segment)
+			if statErr != nil {
+				return nil, statErr
+			}
+			if !info.IsDir() {
+				return nil, fmt.Errorf("create directory %q: path exists but is not a directory", segment)
+			}
+			continue
+		} else {
 			return nil, err
 		}
-		missing = append(missing, current)
 	}
 
-	if err := os.MkdirAll(path, perm); err != nil {
-		return nil, err
-	}
-
-	return missing, nil
+	slices.Reverse(created)
+	return created, nil
 }
 
 func cleanupPartialClone(destinationPath string, preExistingDestination bool, createdDirs []string) {

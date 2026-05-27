@@ -1,6 +1,6 @@
 # 0018 — statuscollector: stop guessing default branch; use `errors.As` consistently
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

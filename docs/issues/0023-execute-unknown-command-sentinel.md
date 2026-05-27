@@ -1,6 +1,6 @@
 # 0023 — cmd/execute: replace substring "unknown command" match with Cobra sentinel
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

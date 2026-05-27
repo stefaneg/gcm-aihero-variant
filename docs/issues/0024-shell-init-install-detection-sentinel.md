@@ -1,6 +1,6 @@
 # 0024 — shell-init: replace substring install detection with sentinel marker
 
-Status: ready-for-agent
+Status: done
 
 ## What to build
 

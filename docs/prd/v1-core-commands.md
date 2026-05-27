@@ -137,7 +137,7 @@ A good test verifies observable external behaviour — output, exit code, filesy
 
 **Status Formatter** — unit tests covering sort order (non-default-branch first, then commits-behind descending, then alphabetical), badge rendering for all states (behind, dirty, fetch-failed, no-remote), colour suppression when `NO_COLOR` is set or stdout is not a TTY, and per-repository `[!{default_branch}]` badge naming with varied default branch names across rows.
 
-**Status Collector** — unit tests using a fake/stub Git Runner. Cover: happy path, fetch-failed, no-remote, non-default branch detection, fallback to `main` when `refs/remotes/origin/HEAD` is absent, dirty file count, `--no-fetch` skipping the fetch call.
+**Status Collector** — unit tests using a fake/stub Git Runner. Cover: happy path, fetch-failed, no-remote, non-default branch detection, unknown default branch when `refs/remotes/origin/HEAD` is absent, dirty file count, `--no-fetch` skipping the fetch call.
 
 **Config Store** — unit tests using a temp directory as config home. Cover: defaults returned when no file exists, a written value is read back correctly, `GCM_CONFIG` env var overrides the default path, file is not created on a read-only operation.
 

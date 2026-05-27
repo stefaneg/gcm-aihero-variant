@@ -26,37 +26,32 @@ func (collector *fakeStatusCollector) Collect(cloneRoot string, noFetch bool) ([
 	return collector.results, collector.err
 }
 
-func withStatusCommandFakes(t *testing.T, cloneRoot string, collector *fakeStatusCollector) {
-	t.Helper()
-
-	originalLoadConfig := loadEffectiveStatusConfig
-	originalNewCollector := newStatusCollector
-	t.Cleanup(func() {
-		loadEffectiveStatusConfig = originalLoadConfig
-		newStatusCollector = originalNewCollector
-	})
-
-	loadEffectiveStatusConfig = func() (configstore.EffectiveConfig, error) {
+func executeStatusCommand(cloneRoot string, collector *fakeStatusCollector, args []string, stdout, stderr *bytes.Buffer) int {
+	deps := DefaultDependencies()
+	deps.LoadEffectiveStatusConfig = func() (configstore.EffectiveConfig, error) {
 		return configstore.EffectiveConfig{CloneRoot: cloneRoot}, nil
 	}
-	newStatusCollector = func() statusCollector {
+	deps.NewStatusCollector = func() statusCollector {
 		return collector
 	}
+
+	return execute(args, stdout, stderr, deps)
 }
 
 func TestStatusShowsFormattedTableForRepositoriesUnderCloneRoot(t *testing.T) {
+	t.Parallel()
+
 	cloneRoot := "/repos"
 	collector := &fakeStatusCollector{results: []statuscollector.Result{
 		{RepositoryPath: "/repos/github.com/acme/current", CurrentBranch: "main", DefaultBranch: "main"},
 		{RepositoryPath: "/repos/github.com/acme/behind", CurrentBranch: "main", DefaultBranch: "main", CommitsBehind: 1},
 		{RepositoryPath: "/repos/github.com/acme/feature", CurrentBranch: "feature/login", DefaultBranch: "main", CommitsBehind: 1, DirtyCount: 1},
 	}}
-	withStatusCommandFakes(t, cloneRoot, collector)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"status"}, &stdout, &stderr)
+	exitCode := executeStatusCommand(cloneRoot, collector, []string{"status"}, &stdout, &stderr)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -82,12 +77,11 @@ func TestStatusNonDefaultFiltersTable(t *testing.T) {
 		{RepositoryPath: "/repos/github.com/acme/current", CurrentBranch: "main", DefaultBranch: "main"},
 		{RepositoryPath: "/repos/github.com/acme/feature", CurrentBranch: "feature/login", DefaultBranch: "main"},
 	}}
-	withStatusCommandFakes(t, cloneRoot, collector)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"status", "--non-default"}, &stdout, &stderr)
+	exitCode := executeStatusCommand(cloneRoot, collector, []string{"status", "--non-default"}, &stdout, &stderr)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -119,12 +113,11 @@ func TestStatusNonDefaultFormatsWidthsFromFilteredRows(t *testing.T) {
 			DirtyCount:     1,
 		},
 	}}
-	withStatusCommandFakes(t, cloneRoot, collector)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"status", "--non-default"}, &stdout, &stderr)
+	exitCode := executeStatusCommand(cloneRoot, collector, []string{"status", "--non-default"}, &stdout, &stderr)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -143,12 +136,11 @@ func TestStatusNonDefaultShowsFilterAwareEmptyMessage(t *testing.T) {
 	collector := &fakeStatusCollector{results: []statuscollector.Result{
 		{RepositoryPath: "/repos/github.com/acme/current", CurrentBranch: "main", DefaultBranch: "main"},
 	}}
-	withStatusCommandFakes(t, cloneRoot, collector)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"status", "--non-default"}, &stdout, &stderr)
+	exitCode := executeStatusCommand(cloneRoot, collector, []string{"status", "--non-default"}, &stdout, &stderr)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -169,12 +161,11 @@ func TestStatusNoFetchUsesLocalStateWhenRemoteIsUnreachable(t *testing.T) {
 	collector := &fakeStatusCollector{results: []statuscollector.Result{
 		{RepositoryPath: "/repos/github.com/acme/current", CurrentBranch: "main", DefaultBranch: "main"},
 	}}
-	withStatusCommandFakes(t, cloneRoot, collector)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"status", "--no-fetch"}, &stdout, &stderr)
+	exitCode := executeStatusCommand(cloneRoot, collector, []string{"status", "--no-fetch"}, &stdout, &stderr)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -197,12 +188,11 @@ func TestStatusReturnsNonZeroAndShowsFetchFailedRepositories(t *testing.T) {
 			ErrorState:     statuscollector.ErrorStateFetchFailed,
 		},
 	}}
-	withStatusCommandFakes(t, cloneRoot, collector)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"status"}, &stdout, &stderr)
+	exitCode := executeStatusCommand(cloneRoot, collector, []string{"status"}, &stdout, &stderr)
 	if exitCode != exitcodes.General {
 		t.Fatalf("Execute exit code = %d, want %d\nstdout:\n%s\nstderr:\n%s", exitCode, exitcodes.General, stdout.String(), stderr.String())
 	}
@@ -230,12 +220,11 @@ func TestStatusShowsIncompleteDataRepositoriesWithoutFailing(t *testing.T) {
 			ErrorState:     statuscollector.ErrorStateDefaultUnknown,
 		},
 	}}
-	withStatusCommandFakes(t, cloneRoot, collector)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"status"}, &stdout, &stderr)
+	exitCode := executeStatusCommand(cloneRoot, collector, []string{"status"}, &stdout, &stderr)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -254,12 +243,11 @@ func TestStatusShowsIncompleteDataRepositoriesWithoutFailing(t *testing.T) {
 func TestStatusPropagatesHardCollectionErrors(t *testing.T) {
 	cloneRoot := filepath.Join(t.TempDir(), "src")
 	collector := &fakeStatusCollector{err: errors.New("walk failed")}
-	withStatusCommandFakes(t, cloneRoot, collector)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"status"}, &stdout, &stderr)
+	exitCode := executeStatusCommand(cloneRoot, collector, []string{"status"}, &stdout, &stderr)
 	if exitCode != exitcodes.General {
 		t.Fatalf("Execute exit code = %d, want %d", exitCode, exitcodes.General)
 	}
@@ -268,15 +256,40 @@ func TestStatusPropagatesHardCollectionErrors(t *testing.T) {
 	}
 }
 
+func TestStatusRendersPartialResultsBeforeReturningBatchError(t *testing.T) {
+	cloneRoot := "/repos"
+	collector := &fakeStatusCollector{
+		results: []statuscollector.Result{
+			{RepositoryPath: "/repos/github.com/acme/current", CurrentBranch: "main", DefaultBranch: "main"},
+			{RepositoryPath: "/repos/github.com/acme/broken", ErrorState: statuscollector.ErrorStateUnknown},
+		},
+		err: errors.New("one or more repositories could not be inspected"),
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := executeStatusCommand(cloneRoot, collector, []string{"status"}, &stdout, &stderr)
+	if exitCode != exitcodes.General {
+		t.Fatalf("Execute exit code = %d, want %d\nstdout:\n%s\nstderr:\n%s", exitCode, exitcodes.General, stdout.String(), stderr.String())
+	}
+
+	if !strings.Contains(stdout.String(), "github.com/acme/current") || !strings.Contains(stdout.String(), "[error]") {
+		t.Fatalf("stdout = %q, want partial table with error badge", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "one or more repositories could not be inspected") {
+		t.Fatalf("stderr = %q, want batch error", stderr.String())
+	}
+}
+
 func TestStatusCommandUsesExpandedCloneRoot(t *testing.T) {
 	collector := &fakeStatusCollector{}
-	withStatusCommandFakes(t, "~/src", collector)
 	t.Setenv("HOME", "/home/dev")
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"status"}, &stdout, &stderr)
+	exitCode := executeStatusCommand("~/src", collector, []string{"status"}, &stdout, &stderr)
 	if exitCode != 0 {
 		t.Fatalf("Execute exit code = %d, want 0\nstdout:\n%s\nstderr:\n%s", exitCode, stdout.String(), stderr.String())
 	}
@@ -296,12 +309,11 @@ func TestStatusCommandKeepsFetchFailedWhenNonDefaultFilterExcludesRow(t *testing
 			ErrorState:     statuscollector.ErrorStateFetchFailed,
 		},
 	}}
-	withStatusCommandFakes(t, cloneRoot, collector)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := Execute([]string{"status", "--non-default"}, &stdout, &stderr)
+	exitCode := executeStatusCommand(cloneRoot, collector, []string{"status", "--non-default"}, &stdout, &stderr)
 	if exitCode != exitcodes.General {
 		t.Fatalf("Execute exit code = %d, want %d", exitCode, exitcodes.General)
 	}

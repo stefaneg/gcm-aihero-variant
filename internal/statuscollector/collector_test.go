@@ -158,6 +158,32 @@ func TestCollectReturnsFetchFailedErrorStateWithoutFailingCollection(t *testing.
 	}
 }
 
+func TestCollectClassifiesWrappedNetworkErrorAsFetchFailed(t *testing.T) {
+	fakeRunner := gitrunnertest.New()
+	fakeRunner.SetCurrentBranch("main")
+	fakeRunner.SetDefaultBranch("main")
+	fakeRunner.SetCommitsBehind(3)
+	fakeRunner.SetDirtyCount(2)
+	fakeRunner.StubFetch(func(repoPath string) error {
+		return fmt.Errorf("fetch origin: %w", &gitrunner.NetworkError{
+			Operation:      "fetch",
+			RepositoryPath: repoPath,
+			Err:            errors.New("host offline"),
+		})
+	})
+
+	collector := statuscollector.New(fakeRunner)
+
+	result, err := collector.Collect("/repos/example", false)
+	if err != nil {
+		t.Fatalf("Collect returned error: %v", err)
+	}
+
+	if result.ErrorState != statuscollector.ErrorStateFetchFailed {
+		t.Fatalf("ErrorState = %q, want %q", result.ErrorState, statuscollector.ErrorStateFetchFailed)
+	}
+}
+
 func TestCollectReturnsNoRemoteErrorStateWithoutFailingCollection(t *testing.T) {
 	fakeRunner := gitrunnertest.New()
 	fakeRunner.SetCurrentBranch("main")
@@ -190,8 +216,8 @@ func TestCollectReturnsNoRemoteErrorStateWithoutFailingCollection(t *testing.T) 
 		t.Fatalf("CurrentBranch = %q, want %q", result.CurrentBranch, "main")
 	}
 
-	if result.DefaultBranch != "main" {
-		t.Fatalf("DefaultBranch = %q, want %q", result.DefaultBranch, "main")
+	if result.DefaultBranch != "" {
+		t.Fatalf("DefaultBranch = %q, want empty", result.DefaultBranch)
 	}
 
 	if result.CommitsBehind != 0 {
