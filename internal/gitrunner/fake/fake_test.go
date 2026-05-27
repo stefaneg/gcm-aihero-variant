@@ -1,17 +1,16 @@
-package gitrunnertest_test
+package fake_test
 
 import (
 	"context"
 	"errors"
+	"git-clone-manager/internal/gitrunner/fake"
 	"sync"
 	"testing"
-
-	"git-clone-manager/internal/gitrunnertest"
 )
 
 func TestFakeReturnsStubbedValuesAndRecordsCalls(t *testing.T) {
 	ctx := context.Background()
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 	fakeRunner.SetCurrentBranch("main")
 	fakeRunner.SetDirtyCount(3)
 	fakeRunner.SetCommitsBehind(2)
@@ -96,7 +95,7 @@ func TestFakeReturnsStubbedValuesAndRecordsCalls(t *testing.T) {
 
 func TestFakeSupportsConcurrentUse(t *testing.T) {
 	ctx := context.Background()
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 	fakeRunner.SetDirtyCount(1)
 
 	var waitGroup sync.WaitGroup

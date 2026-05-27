@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"git-clone-manager/internal/gitrunner/fake"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,11 +11,10 @@ import (
 
 	"git-clone-manager/internal/configstore"
 	"git-clone-manager/internal/gitrunner"
-	"git-clone-manager/internal/gitrunnertest"
 )
 
 func TestClonePassesURLToGitAsIs(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 	cloneRoot := t.TempDir()
 
 	var stdout bytes.Buffer
@@ -37,7 +37,7 @@ func TestClonePassesURLToGitAsIs(t *testing.T) {
 }
 
 func TestCloneRejectsExistingRepositoryWithMismatchedOrigin(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 
 	cloneRoot := t.TempDir()
 	requestedURL := "https://example.com/acme/repo.git"
@@ -71,7 +71,7 @@ func TestCloneRejectsExistingRepositoryWithMismatchedOrigin(t *testing.T) {
 }
 
 func TestCloneRejectsExistingBrokenGitDirectoryWithActionableError(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 
 	cloneRoot := t.TempDir()
 	requestedURL := "https://example.com/acme/repo.git"
@@ -106,7 +106,7 @@ func TestCloneRejectsExistingBrokenGitDirectoryWithActionableError(t *testing.T)
 }
 
 func TestCloneAcceptsExistingRepositoryWithMatchingOrigin(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 
 	cloneRoot := t.TempDir()
 	requestedURL := "https://example.com/acme/repo.git"
@@ -133,7 +133,7 @@ func TestCloneAcceptsExistingRepositoryWithMatchingOrigin(t *testing.T) {
 }
 
 func TestCloneAcceptsPreExistingEmptyDestination(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 
 	cloneRoot := t.TempDir()
 	rawURL := "https://example.com/acme/repo.git"
@@ -161,7 +161,7 @@ func TestCloneAcceptsPreExistingEmptyDestination(t *testing.T) {
 }
 
 func TestCloneCleansUpCreatedDestinationAfterFailure(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 
 	cloneRoot := t.TempDir()
 	rawURL := "https://example.com/acme/repo.git"
@@ -188,7 +188,7 @@ func TestCloneCleansUpCreatedDestinationAfterFailure(t *testing.T) {
 }
 
 func TestCloneLeavesPreExistingEmptyDestinationAfterFailure(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 
 	cloneRoot := t.TempDir()
 	rawURL := "https://example.com/acme/repo.git"

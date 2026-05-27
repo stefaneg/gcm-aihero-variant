@@ -2,12 +2,12 @@ package statuspipeline_test
 
 import (
 	"errors"
+	"git-clone-manager/internal/gitrunner/fake"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"git-clone-manager/internal/gitrunnertest"
 	"git-clone-manager/internal/statuscollector"
 	"git-clone-manager/internal/statuspipeline"
 )
@@ -19,7 +19,7 @@ func TestCollectReturnsPartialResultsWhenOneRepositoryHasHardError(t *testing.T)
 	mkdirGitDir(t, goodRepo)
 	mkdirGitDir(t, badRepo)
 
-	runner := gitrunnertest.New()
+	runner := fake.New()
 	runner.SetCurrentBranch("main")
 	runner.SetDefaultBranch("main")
 	runner.StubCurrentBranch(func(repoPath string) (string, error) {
@@ -62,7 +62,7 @@ func TestCollectReturnsPartialResultsWhenOneRepositoryHasHardError(t *testing.T)
 func TestCollectReturnsActionableErrorWhenCloneRootIsMissing(t *testing.T) {
 	cloneRoot := filepath.Join(t.TempDir(), "missing")
 
-	results, err := statuspipeline.New(gitrunnertest.New()).Collect(cloneRoot, false)
+	results, err := statuspipeline.New(fake.New()).Collect(cloneRoot, false)
 	if err == nil {
 		t.Fatal("Collect error = nil, want missing clone root error")
 	}
@@ -81,7 +81,7 @@ func TestCollectReturnsActionableErrorWhenCloneRootIsMissing(t *testing.T) {
 func TestCollectReturnsEmptyResultsForExistingEmptyCloneRoot(t *testing.T) {
 	cloneRoot := t.TempDir()
 
-	results, err := statuspipeline.New(gitrunnertest.New()).Collect(cloneRoot, false)
+	results, err := statuspipeline.New(fake.New()).Collect(cloneRoot, false)
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}

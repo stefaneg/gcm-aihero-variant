@@ -1,4 +1,4 @@
-package gitrunnertest
+package fake
 
 import (
 	"context"

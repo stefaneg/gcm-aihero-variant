@@ -3,16 +3,16 @@ package statuscollector_test
 import (
 	"errors"
 	"fmt"
+	"git-clone-manager/internal/gitrunner/fake"
 	"sync"
 	"testing"
 
 	"git-clone-manager/internal/gitrunner"
-	"git-clone-manager/internal/gitrunnertest"
 	"git-clone-manager/internal/statuscollector"
 )
 
 func TestCollectReturnsStatusForCleanRepositoryOnDefaultBranch(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 	fakeRunner.SetCurrentBranch("main")
 	fakeRunner.SetDefaultBranch("main")
 	fakeRunner.SetCommitsBehind(0)
@@ -55,7 +55,7 @@ func TestCollectReturnsStatusForCleanRepositoryOnDefaultBranch(t *testing.T) {
 }
 
 func TestCollectReturnsCheckedOutNonDefaultBranch(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 	fakeRunner.SetCurrentBranch("feature/status")
 	fakeRunner.SetDefaultBranch("main")
 	fakeRunner.SetCommitsBehind(2)
@@ -86,7 +86,7 @@ func TestCollectReturnsCheckedOutNonDefaultBranch(t *testing.T) {
 }
 
 func TestCollectReportsDefaultBranchUnknownWhenOriginHeadIsUnset(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 	fakeRunner.SetCurrentBranch("main")
 	fakeRunner.SetDirtyCount(0)
 	fakeRunner.StubDefaultBranch(func(repoPath string) (string, error) {
@@ -117,7 +117,7 @@ func TestCollectReportsDefaultBranchUnknownWhenOriginHeadIsUnset(t *testing.T) {
 }
 
 func TestCollectReturnsFetchFailedErrorStateWithoutFailingCollection(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 	fakeRunner.SetCurrentBranch("main")
 	fakeRunner.SetDefaultBranch("main")
 	fakeRunner.SetCommitsBehind(3)
@@ -159,7 +159,7 @@ func TestCollectReturnsFetchFailedErrorStateWithoutFailingCollection(t *testing.
 }
 
 func TestCollectClassifiesWrappedNetworkErrorAsFetchFailed(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 	fakeRunner.SetCurrentBranch("main")
 	fakeRunner.SetDefaultBranch("main")
 	fakeRunner.SetCommitsBehind(3)
@@ -185,7 +185,7 @@ func TestCollectClassifiesWrappedNetworkErrorAsFetchFailed(t *testing.T) {
 }
 
 func TestCollectReturnsNoRemoteErrorStateWithoutFailingCollection(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 	fakeRunner.SetCurrentBranch("main")
 	fakeRunner.SetDirtyCount(4)
 	fakeRunner.StubFetch(func(repoPath string) error {
@@ -234,7 +234,7 @@ func TestCollectReturnsNoRemoteErrorStateWithoutFailingCollection(t *testing.T) 
 }
 
 func TestCollectSkipsFetchWhenNoFetchIsEnabled(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 	fakeRunner.SetCurrentBranch("main")
 	fakeRunner.SetDefaultBranch("main")
 	fakeRunner.SetCommitsBehind(5)
@@ -257,7 +257,7 @@ func TestCollectSkipsFetchWhenNoFetchIsEnabled(t *testing.T) {
 }
 
 func TestCollectSupportsConcurrentUseWithSharedRunner(t *testing.T) {
-	fakeRunner := gitrunnertest.New()
+	fakeRunner := fake.New()
 	fakeRunner.SetCurrentBranch("main")
 	fakeRunner.SetDefaultBranch("main")
 	fakeRunner.SetCommitsBehind(1)
